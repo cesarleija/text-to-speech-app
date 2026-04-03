@@ -443,7 +443,7 @@ class TTSApp:
         self.root.update_idletasks()
         total = self._pane.winfo_height()
         if total > 10:
-            self._pane.sash_place(0, 0, int(total * 0.60))
+            self._pane.sash_place(0, 0, int(total * 0.50))
         else:
             self.root.after(100, self._set_initial_sash)
 
@@ -533,7 +533,7 @@ class TTSApp:
 
     def _build_voice_card(self, pane):
         card = tk.Frame(pane, bg=T["PANEL"])
-        pane.add(card, minsize=180, stretch="always")
+        pane.add(card, minsize=260, stretch="always")
         self._voice_card = card
 
         # ── Card header ──
@@ -777,7 +777,7 @@ class TTSApp:
     def _set_initial_sash(self):
         total = self._pane.winfo_height()
         if total > 10:
-            self._pane.sash_place(0, 0, int(total * 0.60))
+            self._pane.sash_place(0, 0, int(total * 0.50))
         else:
             self.root.after(100, self._set_initial_sash)
 
