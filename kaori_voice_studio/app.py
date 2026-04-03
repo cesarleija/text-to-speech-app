@@ -382,23 +382,61 @@ class TTSApp:
 
     def _setup_native_frame(self):
         """
-        Keep window visible in taskbar and enable Aero snap / shadow
-        by setting WS_EX_APPWINDOW on Windows.
+        Register the window properly with Windows so that:
+        - It appears in the taskbar (WS_EX_APPWINDOW)
+        - It stays on the virtual desktop it was opened on
+        - It gets Aero shadow and snap support
         """
         if sys.platform != "win32":
             return
         try:
             import ctypes
-            GWL_EXSTYLE      = -20
-            WS_EX_APPWINDOW  = 0x00040000
-            WS_EX_TOOLWINDOW = 0x00000080
+            import ctypes.wintypes
+
+            user32  = ctypes.windll.user32
+            dwmapi  = ctypes.windll.dwmapi
+
             hwnd = ctypes.windll.user32.GetParent(self.root.winfo_id())
-            style = ctypes.windll.user32.GetWindowLongW(hwnd, GWL_EXSTYLE)
-            style = (style & ~WS_EX_TOOLWINDOW) | WS_EX_APPWINDOW
-            ctypes.windll.user32.SetWindowLongW(hwnd, GWL_EXSTYLE, style)
-            # Hide and show to apply the style change
+
+            # Window style flags
+            GWL_STYLE        = -16
+            GWL_EXSTYLE      = -20
+            WS_THICKFRAME    = 0x00040000  # needed for snap & shadow
+            WS_CAPTION       = 0x00C00000  # needed for DWM shadow
+            WS_EX_APPWINDOW  = 0x00040000  # show in taskbar
+            WS_EX_TOOLWINDOW = 0x00000080  # hide from taskbar (remove this)
+
+            # Add WS_CAPTION + WS_THICKFRAME so DWM keeps shadow & snap
+            style = user32.GetWindowLongW(hwnd, GWL_STYLE)
+            style |= WS_CAPTION | WS_THICKFRAME
+            user32.SetWindowLongW(hwnd, GWL_STYLE, style)
+
+            # Set EX style: add APPWINDOW, remove TOOLWINDOW
+            ex_style = user32.GetWindowLongW(hwnd, GWL_EXSTYLE)
+            ex_style = (ex_style & ~WS_EX_TOOLWINDOW) | WS_EX_APPWINDOW
+            user32.SetWindowLongW(hwnd, GWL_EXSTYLE, ex_style)
+
+            # Tell DWM to extend the frame — this is what keeps the window
+            # pinned to a single virtual desktop like a normal window
+            MARGINS = ctypes.c_int * 4
+            margins = MARGINS(1, 1, 1, 1)
+            dwmapi.DwmExtendFrameIntoClientArea(hwnd, ctypes.byref(
+                (ctypes.c_int * 4)(0, 0, 0, 0)))
+
+            # Apply via SetWindowPos (no resize, no move — just refresh flags)
+            SWP_NOMOVE     = 0x0002
+            SWP_NOSIZE     = 0x0001
+            SWP_NOZORDER   = 0x0004
+            SWP_FRAMECHANGED = 0x0020
+            HWND_TOP = 0
+            user32.SetWindowPos(hwnd, HWND_TOP, 0, 0, 0, 0,
+                                SWP_NOMOVE | SWP_NOSIZE |
+                                SWP_NOZORDER | SWP_FRAMECHANGED)
+
+            # Re-show so the style changes take effect cleanly
             self.root.withdraw()
             self.root.after(10, self.root.deiconify)
+
         except Exception:
             pass
 
