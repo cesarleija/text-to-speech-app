@@ -73,6 +73,8 @@ VOICES = {
     "🇲🇽  Jorge (Male · MX)"      : "es-MX-JorgeNeural",
     "🇪🇸  Alvaro (Male · ES)"     : "es-ES-AlvaroNeural",
     "🇪🇸  Elvira (Female · ES)"   : "es-ES-ElviraNeural",
+    "🇦🇷  Elena (Female · AR)"    : "es-AR-ElenaNeural",
+    "🇦🇷  Tomas (Male · AR)"      : "es-AR-TomasNeural",
     "🇫🇷  Denise (Female · FR)"   : "fr-FR-DeniseNeural",
     "🇩🇪  Katja (Female · DE)"    : "de-DE-KatjaNeural",
     "🇯🇵  Nanami (Female · JP)"   : "ja-JP-NanamiNeural",
@@ -85,7 +87,7 @@ VOICES = {
 
 PREVIEW_SENTENCES = {
     "en": "Hello! This is a preview of the selected voice. How does it sound to you?",
-    "es": "Hola! Esta es una vista previa de la voz seleccionada. Como le suena?",
+    "es": "¡Hola! Esta es una vista previa de la voz seleccionada. ¿Cómo le suena?",
     "fr": "Bonjour! Ceci est un apercu de la voix selectionnee.",
     "de": "Hallo! Dies ist eine Vorschau der ausgewaehlten Stimme.",
     "ja": "This is a Japanese voice preview.",
