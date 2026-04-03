@@ -130,7 +130,6 @@ def _relaunch():
 
     sys.exit(0)
 
-
 # ── Public API ────────────────────────────────────────────────────────────────
 
 def check_and_update(on_checking=None, on_update_found=None,
@@ -168,6 +167,7 @@ def check_and_update(on_checking=None, on_update_found=None,
             _log("Update successful — relaunching.")
             if on_updated:
                 on_updated()
+            import time; time.sleep(0.4)  # let Tk process after(0) splash destroy
             _relaunch()
         else:
             msg = "Update failed — launching current version."

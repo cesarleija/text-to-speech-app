@@ -992,18 +992,6 @@ class UpdateSplash:
 # Entry point
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _on_updated(splash):
-    """Close the splash cleanly before the updater calls sys.exit()."""
-    splash.set_status("Update complete — restarting...")
-    try:
-        splash._root.after(800, splash.close)
-        splash._root.update()
-        import time
-        time.sleep(0.9)   # give Tk time to destroy the window before exit
-    except Exception:
-        pass
-
-
 def main():
     import threading
     from kaori_voice_studio.updater import check_and_update
@@ -1017,7 +1005,7 @@ def main():
         check_and_update(
             on_checking      = lambda:   splash.set_status("Checking for updates..."),
             on_update_found  = lambda v: splash.set_status(f"Updating to v{v}..."),
-            on_updated       = lambda:   _on_updated(splash),
+            on_updated       = lambda:   splash._root.after(0, splash.close),
             on_no_update     = lambda:   splash.set_status("Up to date!"),
             on_error         = lambda m: splash.set_status(m),
         )
