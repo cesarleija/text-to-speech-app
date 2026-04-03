@@ -23,7 +23,7 @@ dependencies = [
     "pygame-ce>=2.5.0",
 ]
 
-[project.scripts]
+[project.gui-scripts]
 kaori-voice-studio = "kaori_voice_studio.app:main"
 
 [tool.setuptools.packages.find]
