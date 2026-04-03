@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "kaori-voice-studio"
-version = "1.0.0"
+dynamic = ["version"]
 description = "A desktop Text-to-Speech app powered by Microsoft Edge Neural Voices"
 readme = "README.md"
 license = { file = "LICENSE" }
@@ -28,6 +28,9 @@ kaori-voice-studio = "kaori_voice_studio.app:main"
 
 [project.scripts]
 kaori-voice-studio-setup = "kaori_voice_studio.create_shortcut:main"
+
+[tool.setuptools.dynamic]
+version = {attr = "kaori_voice_studio.version.__version__"}
 
 [tool.setuptools.packages.find]
 where = ["."]

@@ -927,14 +927,82 @@ class TTSApp:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Update splash
+# ─────────────────────────────────────────────────────────────────────────────
+
+class UpdateSplash:
+    """
+    Tiny borderless window shown while the update check runs.
+    Destroyed automatically before the main window opens.
+    """
+    def __init__(self):
+        self._root = tk.Tk()
+        self._root.overrideredirect(True)      # no title bar
+        self._root.configure(bg="#E8387A")
+        self._root.attributes("-topmost", True)
+
+        # Centre on screen
+        w, h = 320, 80
+        sw = self._root.winfo_screenwidth()
+        sh = self._root.winfo_screenheight()
+        self._root.geometry(f"{w}x{h}+{(sw-w)//2}+{(sh-h)//2}")
+
+        tk.Label(self._root, text="Kaori Voice Studio",
+                 bg="#E8387A", fg="white",
+                 font=("Segoe UI", 13, "bold")).pack(pady=(14, 2))
+        self._lbl = tk.Label(self._root, text="Checking for updates...",
+                             bg="#E8387A", fg="#FFD0E5",
+                             font=("Segoe UI", 9))
+        self._lbl.pack()
+        self._root.update()
+
+    def set_status(self, msg: str):
+        self._lbl.configure(text=msg)
+        self._root.update()
+
+    def close(self):
+        self._root.destroy()
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Entry point
 # ─────────────────────────────────────────────────────────────────────────────
 
 def main():
-    root = tk.Tk()
-    root.geometry("800x660")
-    TTSApp(root)
-    root.mainloop()
+    import threading
+    from kaori_voice_studio.updater import check_and_update
+
+    splash = UpdateSplash()
+
+    # Run the update check in a thread so the splash stays responsive
+    update_done = threading.Event()
+
+    def run_check():
+        check_and_update(
+            on_checking      = lambda:   splash.set_status("Checking for updates..."),
+            on_update_found  = lambda v: splash.set_status(f"Updating to v{v}..."),
+            on_updated       = lambda:   splash.set_status("Update complete — restarting..."),
+            on_no_update     = lambda:   splash.set_status("Up to date!"),
+            on_error         = lambda m: splash.set_status(m),
+        )
+        update_done.set()
+
+    t = threading.Thread(target=run_check, daemon=True)
+    t.start()
+
+    # Poll until the check finishes (keeps Tk event loop alive for the splash)
+    def wait_for_check():
+        if update_done.is_set():
+            splash.close()
+            root = tk.Tk()
+            root.geometry("800x660")
+            TTSApp(root)
+            root.mainloop()
+        else:
+            splash._root.after(100, wait_for_check)
+
+    splash._root.after(100, wait_for_check)
+    splash._root.mainloop()
 
 
 if __name__ == "__main__":
