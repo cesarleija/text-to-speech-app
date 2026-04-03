@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.backends.legacy:build"
+
+[project]
+name = "kaori-voice-studio"
+version = "1.0.0"
+description = "A desktop Text-to-Speech app powered by Microsoft Edge Neural Voices"
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.10"
+keywords = ["tts", "text-to-speech", "edge-tts", "voice", "audio"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Topic :: Multimedia :: Sound/Audio :: Speech",
+    "Environment :: X11 Applications",
+]
+
+dependencies = [
+    "edge-tts>=6.1.9",
+    "pygame>=2.5.0",
+]
+
+[project.scripts]
+kaori-voice-studio = "kaori_voice_studio.app:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["kaori_voice_studio*"]
