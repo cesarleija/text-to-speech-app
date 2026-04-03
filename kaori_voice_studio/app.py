@@ -338,6 +338,17 @@ class ThemeButton(tk.Frame):
         self._apply()
 
 
+def _log_chrome_error(e):
+    """Log chrome setup errors silently — app still works without custom chrome."""
+    try:
+        from pathlib import Path
+        log = Path.home() / "kaori_update.log"
+        with open(log, "a", encoding="utf-8") as f:
+            f.write(f"[chrome] {e}\n")
+    except Exception:
+        pass
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Main application
 # ─────────────────────────────────────────────────────────────────────────────
@@ -349,8 +360,9 @@ class TTSApp:
         self.root.minsize(MIN_W, MIN_H)
 
         # ── Custom window chrome ──────────────────────────────────────────────
-        # Remove the native title bar but keep the window in the taskbar
-        self.root.overrideredirect(True)
+        # Do NOT use overrideredirect — it breaks virtual desktop tracking.
+        # Instead strip the title bar via Win32 API while keeping DWM active.
+        self.root.update_idletasks()   # ensure hwnd is valid before API calls
         self._setup_native_frame()
 
         # Restore resize capability via manual grip
@@ -382,10 +394,18 @@ class TTSApp:
 
     def _setup_native_frame(self):
         """
-        Register the window properly with Windows so that:
-        - It appears in the taskbar (WS_EX_APPWINDOW)
-        - It stays on the virtual desktop it was opened on
-        - It gets Aero shadow and snap support
+        Remove the native title bar while keeping the window properly
+        registered with Windows DWM — so it:
+          - Stays on one virtual desktop
+          - Shows in the taskbar
+          - Gets Aero shadow and snap
+          - Appears in Alt+Tab
+
+        Strategy: keep overrideredirect(False) so DWM tracks the window
+        normally, then use SetWindowLong to strip WS_CAPTION while keeping
+        WS_THICKFRAME (needed for DWM shadow + virtual desktop tracking).
+        A 1px top margin via DwmExtendFrameIntoClientArea hides the remaining
+        native title bar pixel.
         """
         if sys.platform != "win32":
             return
@@ -396,49 +416,50 @@ class TTSApp:
             user32  = ctypes.windll.user32
             dwmapi  = ctypes.windll.dwmapi
 
-            hwnd = ctypes.windll.user32.GetParent(self.root.winfo_id())
+            # Use the window's own hwnd, not the parent
+            hwnd = self.root.winfo_id()
 
-            # Window style flags
-            GWL_STYLE        = -16
-            GWL_EXSTYLE      = -20
-            WS_THICKFRAME    = 0x00040000  # needed for snap & shadow
-            WS_CAPTION       = 0x00C00000  # needed for DWM shadow
-            WS_EX_APPWINDOW  = 0x00040000  # show in taskbar
-            WS_EX_TOOLWINDOW = 0x00000080  # hide from taskbar (remove this)
+            GWL_STYLE     = -16
+            GWL_EXSTYLE   = -20
+            WS_CAPTION    = 0x00C00000
+            WS_THICKFRAME = 0x00040000
+            WS_SYSMENU    = 0x00080000
+            WS_MAXIMIZEBOX= 0x00010000
+            WS_MINIMIZEBOX= 0x00020000
+            WS_EX_APPWINDOW  = 0x00040000
+            WS_EX_TOOLWINDOW = 0x00000080
 
-            # Add WS_CAPTION + WS_THICKFRAME so DWM keeps shadow & snap
+            # Strip caption but keep thickframe for DWM shadow + virtual desktops
             style = user32.GetWindowLongW(hwnd, GWL_STYLE)
-            style |= WS_CAPTION | WS_THICKFRAME
+            style &= ~(WS_CAPTION | WS_SYSMENU | WS_MAXIMIZEBOX | WS_MINIMIZEBOX)
+            style |= WS_THICKFRAME
             user32.SetWindowLongW(hwnd, GWL_STYLE, style)
 
-            # Set EX style: add APPWINDOW, remove TOOLWINDOW
-            ex_style = user32.GetWindowLongW(hwnd, GWL_EXSTYLE)
-            ex_style = (ex_style & ~WS_EX_TOOLWINDOW) | WS_EX_APPWINDOW
-            user32.SetWindowLongW(hwnd, GWL_EXSTYLE, ex_style)
+            # Ensure APPWINDOW (taskbar) and remove TOOLWINDOW
+            ex = user32.GetWindowLongW(hwnd, GWL_EXSTYLE)
+            ex = (ex & ~WS_EX_TOOLWINDOW) | WS_EX_APPWINDOW
+            user32.SetWindowLongW(hwnd, GWL_EXSTYLE, ex)
 
-            # Tell DWM to extend the frame — this is what keeps the window
-            # pinned to a single virtual desktop like a normal window
+            # Extend DWM frame — negative margins collapse the title bar
+            # but keep DWM compositing active (shadow, virtual desktop tracking)
             MARGINS = ctypes.c_int * 4
-            margins = MARGINS(1, 1, 1, 1)
-            dwmapi.DwmExtendFrameIntoClientArea(hwnd, ctypes.byref(
-                (ctypes.c_int * 4)(0, 0, 0, 0)))
+            margins = MARGINS(-1, -1, -1, -1)
+            try:
+                dwmapi.DwmExtendFrameIntoClientArea(hwnd, ctypes.byref(margins))
+            except Exception:
+                pass
 
-            # Apply via SetWindowPos (no resize, no move — just refresh flags)
-            SWP_NOMOVE     = 0x0002
-            SWP_NOSIZE     = 0x0001
-            SWP_NOZORDER   = 0x0004
-            SWP_FRAMECHANGED = 0x0020
-            HWND_TOP = 0
-            user32.SetWindowPos(hwnd, HWND_TOP, 0, 0, 0, 0,
+            # Apply style changes
+            SWP_NOMOVE      = 0x0002
+            SWP_NOSIZE      = 0x0001
+            SWP_NOZORDER    = 0x0004
+            SWP_FRAMECHANGED= 0x0020
+            user32.SetWindowPos(hwnd, 0, 0, 0, 0, 0,
                                 SWP_NOMOVE | SWP_NOSIZE |
                                 SWP_NOZORDER | SWP_FRAMECHANGED)
 
-            # Re-show so the style changes take effect cleanly
-            self.root.withdraw()
-            self.root.after(10, self.root.deiconify)
-
-        except Exception:
-            pass
+        except Exception as e:
+            _log_chrome_error(e)
 
     # ── Layout ────────────────────────────────────────────────────────────────
 
@@ -593,14 +614,10 @@ class TTSApp:
     # ── Window controls ───────────────────────────────────────────────────────
 
     def _minimize(self):
-        self.root.overrideredirect(False)
         self.root.iconify()
-        self.root.bind("<Map>", self._on_restore)
 
     def _on_restore(self, e):
-        self.root.unbind("<Map>")
-        self.root.overrideredirect(True)
-        self._setup_native_frame()
+        pass  # no-op — overrideredirect no longer used
 
     def _toggle_maximize(self, e=None):
         if self._maximized:
