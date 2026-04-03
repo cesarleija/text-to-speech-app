@@ -379,7 +379,12 @@ class TTSApp:
 
         tk.Label(self._hdr, text="Kaori Voice Studio",
                  bg=T["PANEL"], fg=T["TEXT"],
-                 font=FONTS["title"]).pack(side="left", padx=20, pady=14)
+                 font=FONTS["title"]).pack(side="left", padx=(20, 6), pady=14)
+
+        from kaori_voice_studio.version import __version__
+        tk.Label(self._hdr, text=f"v{__version__}",
+                 bg=T["PANEL"], fg=T["TEXT_DIM"],
+                 font=FONTS["small"]).pack(side="left", pady=14)
 
         # Theme selector (right side of header)
         theme_frame = tk.Frame(self._hdr, bg=T["PANEL"])
