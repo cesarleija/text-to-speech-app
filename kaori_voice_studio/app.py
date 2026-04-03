@@ -363,6 +363,7 @@ class TTSApp:
         # Strip native title bar via Win32 API (keeps virtual desktop tracking)
         self.root.update_idletasks()
         self._setup_native_frame()
+        self.root.after(50, self._apply_titlebar_theme)
 
         self._preview_file  = None
         self._is_playing    = False
@@ -460,7 +461,60 @@ class TTSApp:
         except Exception as e:
             _log_chrome_error(e)
 
-    # ── Layout ────────────────────────────────────────────────────────────────
+    def _apply_titlebar_theme(self):
+        """
+        Set the native Windows title bar color to match the current theme.
+        Uses DwmSetWindowAttribute — works on Windows 11 (build 22000+).
+        Gracefully does nothing on Windows 10 or non-Windows.
+        """
+        if sys.platform != "win32":
+            return
+        try:
+            import ctypes
+            import ctypes.wintypes
+
+            dwmapi = ctypes.windll.dwmapi
+            hwnd   = self.root.winfo_id()
+
+            def hex_to_colorref(hex_color):
+                """Convert #RRGGBB to Windows COLORREF (0x00BBGGRR)."""
+                h = hex_color.lstrip("#")
+                r, g, b = int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
+                return ctypes.c_uint32(r | (g << 8) | (b << 16))
+
+            # DWM attribute constants (Windows 11+)
+            DWMWA_USE_IMMERSIVE_DARK_MODE = 20
+            DWMWA_CAPTION_COLOR           = 35
+            DWMWA_TEXT_COLOR              = 36
+            DWMWA_BORDER_COLOR            = 34
+
+            # Dark mode flag based on theme background brightness
+            is_dark = 1 if self._theme_name == "Dark" else 0
+            dark_val = ctypes.c_uint32(is_dark)
+            dwmapi.DwmSetWindowAttribute(
+                hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE,
+                ctypes.byref(dark_val), ctypes.sizeof(dark_val))
+
+            # Caption (title bar) background color
+            caption_col = hex_to_colorref(T["PANEL"])
+            dwmapi.DwmSetWindowAttribute(
+                hwnd, DWMWA_CAPTION_COLOR,
+                ctypes.byref(caption_col), ctypes.sizeof(caption_col))
+
+            # Title bar text color
+            text_col = hex_to_colorref(T["TEXT"])
+            dwmapi.DwmSetWindowAttribute(
+                hwnd, DWMWA_TEXT_COLOR,
+                ctypes.byref(text_col), ctypes.sizeof(text_col))
+
+            # Window border color (matches accent)
+            border_col = hex_to_colorref(T["ACCENT"])
+            dwmapi.DwmSetWindowAttribute(
+                hwnd, DWMWA_BORDER_COLOR,
+                ctypes.byref(border_col), ctypes.sizeof(border_col))
+
+        except Exception as e:
+            _log_chrome_error(e)
 
     def _build(self):
         self._apply_theme()
@@ -833,6 +887,9 @@ class TTSApp:
         self._title_lbl.configure(bg=T["PANEL"], fg=T["TEXT"])
         self._ver_lbl.configure(bg=T["PANEL"], fg=T["TEXT_DIM"])
         self._hdr.configure(bg=T["PANEL"])
+
+        # Native title bar
+        self._apply_titlebar_theme()
 
         # PanedWindow sash
         self._pane.configure(bg=T["BG"])
