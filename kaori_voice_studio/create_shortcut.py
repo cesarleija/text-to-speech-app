@@ -55,23 +55,33 @@ def create_shortcut():
 
     if entry_point:
         target = entry_point
-        args = ""
+        args = "-m kaori_voice_studio.app"  # always use -m for reliability
     else:
         target = sys.executable
         args = "-m kaori_voice_studio.app"
 
-    # Escape backslashes for PowerShell string literals
-    def ps(p): return str(p).replace("\\", "\\\\")
+    # Always launch via pythonw.exe (no console window) with -m
+    pythonw = Path(sys.executable).parent / "pythonw.exe"
+    if pythonw.exists():
+        target = str(pythonw)
+    else:
+        target = sys.executable
 
-    icon_line = f"$sc.IconLocation = '{ps(icon_path)}'" if icon_path else ""
+    # Use double-quoted PowerShell strings ("...") to safely handle
+    # paths containing spaces (e.g. "C:\Users\Julio Leija\Desktop\...")
+    def ps(p):
+        # Escape double-quotes and backslashes inside a PS double-quoted string
+        return str(p).replace("\\", "\\\\").replace('"', '\\"')
+
+    icon_line = f'$sc.IconLocation = "{ps(icon_path)}"' if icon_path else ""
 
     ps_script = f"""
 $ws = New-Object -ComObject WScript.Shell
-$sc = $ws.CreateShortcut('{ps(shortcut_path)}')
-$sc.TargetPath = '{ps(target)}'
-$sc.Arguments = '{args}'
-$sc.WorkingDirectory = '{ps(Path.home())}'
-$sc.Description = 'Kaori Voice Studio - Text to Speech'
+$sc = $ws.CreateShortcut("{ps(shortcut_path)}")
+$sc.TargetPath = "{ps(target)}"
+$sc.Arguments = "{args}"
+$sc.WorkingDirectory = "{ps(Path.home())}"
+$sc.Description = "Kaori Voice Studio - Text to Speech"
 {icon_line}
 $sc.Save()
 """
