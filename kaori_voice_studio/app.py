@@ -570,7 +570,7 @@ class TTSApp:
         inner = tk.Frame(card, bg=T["PANEL"])
         inner.pack(fill="both", expand=True, padx=14, pady=(12, 0))
 
-        # Row 1: dropdown
+        # Row 1: dropdown (fixed height)
         drop_row = tk.Frame(inner, bg=T["PANEL"])
         drop_row.pack(fill="x", pady=(0, 12))
 
@@ -591,15 +591,15 @@ class TTSApp:
         )
         self._voice_menu.pack(fill="x")
 
-        # Row 2: sample text entry
+        # Row 2: sample text entry — expands to fill remaining space
         sample_row = tk.Frame(inner, bg=T["PANEL"])
-        sample_row.pack(fill="x", pady=(0, 10))
+        sample_row.pack(fill="both", expand=True)
 
         tk.Label(sample_row, text="Sample text", bg=T["PANEL"],
                  fg=T["TEXT_DIM"], font=FONTS["small"]).pack(anchor="w", pady=(0, 4))
 
         entry_bg = tk.Frame(sample_row, bg=T["SURFACE"])
-        entry_bg.pack(fill="x")
+        entry_bg.pack(fill="both", expand=True)
 
         self._preview_entry = tk.Entry(
             entry_bg, textvariable=self.preview_var,
@@ -608,7 +608,7 @@ class TTSApp:
             relief="flat", font=FONTS["body"], bd=8,
             selectbackground=T["ACCENT"], selectforeground=T["BTN_FG"],
         )
-        self._preview_entry.pack(fill="x")
+        self._preview_entry.pack(fill="x", pady=(4, 0))
 
     def _build_controls_card(self, parent):
         card, inner = self._make_card(parent, "Controls")
