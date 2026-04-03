@@ -536,16 +536,41 @@ class TTSApp:
         pane.add(card, minsize=180, stretch="always")
         self._voice_card = card
 
+        # ── Card header ──
         hdr = tk.Frame(card, bg=T["PANEL"])
         hdr.pack(fill="x", padx=14, pady=(10, 0))
         tk.Label(hdr, text="Voice & Preview", bg=T["PANEL"], fg=T["TEXT_DIM"],
                  font=FONTS["small"]).pack(side="left")
         tk.Frame(card, bg=T["BORDER"], height=1).pack(fill="x", padx=14, pady=(4, 0))
 
-        inner = tk.Frame(card, bg=T["PANEL"])
-        inner.pack(fill="both", expand=True, padx=14, pady=12)
+        # ── Button row — packed BEFORE inner so it always claims its space ──
+        ctrl_row = tk.Frame(card, bg=T["PANEL"])
+        ctrl_row.pack(side="bottom", fill="x", padx=14, pady=(6, 12))
 
-        # ── Row 1: dropdown ──
+        self._wave = WaveAnim(ctrl_row)
+        self._wave.pack(side="left", padx=(0, 10))
+
+        self.play_btn = FlatButton(
+            ctrl_row, "▶  Play Preview", self._preview,
+            btn_w=130, btn_h=34,
+            bg=T["ACCENT"], fg=T["BTN_FG"], hover_bg=T["ACCENT_HO"],
+        )
+        self.play_btn.pack(side="left", padx=(0, 8))
+
+        self.stop_btn = FlatButton(
+            ctrl_row, "■  Stop", self._stop_preview,
+            btn_w=90, btn_h=34,
+            bg=T["SURFACE"], fg=T["TEXT_DIM"],
+            hover_bg=T["BORDER"], dis_bg=T["SURFACE"],
+        )
+        self.stop_btn.pack(side="left")
+        self.stop_btn.set_state("disabled")
+
+        # ── Content area: dropdown + sample entry ──
+        inner = tk.Frame(card, bg=T["PANEL"])
+        inner.pack(fill="both", expand=True, padx=14, pady=(12, 0))
+
+        # Row 1: dropdown
         drop_row = tk.Frame(inner, bg=T["PANEL"])
         drop_row.pack(fill="x", pady=(0, 12))
 
@@ -566,7 +591,7 @@ class TTSApp:
         )
         self._voice_menu.pack(fill="x")
 
-        # ── Row 2: sample text label + entry ──
+        # Row 2: sample text entry
         sample_row = tk.Frame(inner, bg=T["PANEL"])
         sample_row.pack(fill="x", pady=(0, 10))
 
@@ -584,29 +609,6 @@ class TTSApp:
             selectbackground=T["ACCENT"], selectforeground=T["BTN_FG"],
         )
         self._preview_entry.pack(fill="x")
-
-        # ── Row 3: play / stop buttons + wave ──
-        ctrl_row = tk.Frame(inner, bg=T["PANEL"])
-        ctrl_row.pack(fill="x", pady=(4, 0))
-
-        self._wave = WaveAnim(ctrl_row)
-        self._wave.pack(side="left", padx=(0, 10))
-
-        self.play_btn = FlatButton(
-            ctrl_row, "▶  Play Preview", self._preview,
-            btn_w=130, btn_h=34,
-            bg=T["ACCENT"], fg=T["BTN_FG"], hover_bg=T["ACCENT_HO"],
-        )
-        self.play_btn.pack(side="left", padx=(0, 8))
-
-        self.stop_btn = FlatButton(
-            ctrl_row, "■  Stop", self._stop_preview,
-            btn_w=90, btn_h=34,
-            bg=T["SURFACE"], fg=T["TEXT_DIM"],
-            hover_bg=T["BORDER"], dis_bg=T["SURFACE"],
-        )
-        self.stop_btn.pack(side="left")
-        self.stop_btn.set_state("disabled")
 
     def _build_controls_card(self, parent):
         card, inner = self._make_card(parent, "Controls")
