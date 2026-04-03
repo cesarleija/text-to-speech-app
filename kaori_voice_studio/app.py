@@ -102,6 +102,55 @@ PREVIEW_SENTENCES = {
 MIN_W, MIN_H   = 680, 560
 RIGHT_PANEL_W  = 230
 
+# ── Kokoro voices ─────────────────────────────────────────────────────────────
+# Format:  "Display label" : "kokoro_voice_id"
+# lang_code: 'a'=American English, 'b'=British English, 'e'=Spanish, 'f'=French,
+#            'h'=Hindi, 'i'=Italian, 'p'=Portuguese, 'j'=Japanese, 'z'=Chinese
+
+KOKORO_VOICES = {
+    # American English – Female
+    "🇺🇸  Heart (Female · Warm)"      : ("af_heart",    "a"),
+    "🇺🇸  Bella (Female · Soft)"      : ("af_bella",    "a"),
+    "🇺🇸  Sarah (Female · Natural)"   : ("af_sarah",    "a"),
+    "🇺🇸  Nicole (Female · Whisper)"  : ("af_nicole",   "a"),
+    "🇺🇸  Sky (Female · Airy)"        : ("af_sky",      "a"),
+    "🇺🇸  Alloy (Female · Clear)"     : ("af_alloy",    "a"),
+    "🇺🇸  Nova (Female · Bright)"     : ("af_nova",     "a"),
+    "🇺🇸  River (Female · Calm)"      : ("af_river",    "a"),
+    "🇺🇸  Jessica (Female · Warm)"    : ("af_jessica",  "a"),
+    "🇺🇸  Kore (Female · Strong)"     : ("af_kore",     "a"),
+    "🇺🇸  Aoede (Female · Musical)"   : ("af_aoede",    "a"),
+    # American English – Male
+    "🇺🇸  Adam (Male · Deep)"         : ("am_adam",     "a"),
+    "🇺🇸  Michael (Male · Warm)"      : ("am_michael",  "a"),
+    "🇺🇸  Echo (Male · Clear)"        : ("am_echo",     "a"),
+    "🇺🇸  Eric (Male · Natural)"      : ("am_eric",     "a"),
+    "🇺🇸  Fenrir (Male · Strong)"     : ("am_fenrir",   "a"),
+    "🇺🇸  Liam (Male · Friendly)"     : ("am_liam",     "a"),
+    "🇺🇸  Onyx (Male · Deep)"         : ("am_onyx",     "a"),
+    "🇺🇸  Puck (Male · Playful)"      : ("am_puck",     "a"),
+    # British English – Female
+    "🇬🇧  Emma (Female · Elegant)"    : ("bf_emma",     "b"),
+    "🇬🇧  Alice (Female · Clear)"     : ("bf_alice",    "b"),
+    "🇬🇧  Isabella (Female · Warm)"   : ("bf_isabella", "b"),
+    "🇬🇧  Lily (Female · Soft)"       : ("bf_lily",     "b"),
+    # British English – Male
+    "🇬🇧  George (Male · Authoritative)": ("bm_george", "b"),
+    "🇬🇧  Lewis (Male · Natural)"     : ("bm_lewis",    "b"),
+    "🇬🇧  Daniel (Male · Warm)"       : ("bm_daniel",   "b"),
+    "🇬🇧  Fable (Male · Story)"       : ("bm_fable",    "b"),
+    # Child-like / High pitch (use af_sky + speed adjustment for best result)
+    "🧒  Child · Girl (Sky)"          : ("af_sky",      "a"),
+    "🧒  Child · Boy (Puck)"          : ("am_puck",     "a"),
+}
+
+KOKORO_ESPEAK_INSTALL = (
+    "Kokoro requires espeak-ng to be installed on your system.\n\n"
+    "Download the Windows installer from:\n"
+    "https://github.com/espeak-ng/espeak-ng/releases\n\n"
+    "Download the .msi file, install it, then restart Kaori Voice Studio."
+)
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Audio helpers
@@ -118,6 +167,44 @@ def _volume_str(vol):
 def _pitch_str(hz):
     val = int(round(hz))
     return f"+{val}Hz" if val >= 0 else f"{val}Hz"
+
+
+def _kokoro_available():
+    """Check if kokoro and soundfile packages are importable."""
+    try:
+        import kokoro  # noqa: F401
+        import soundfile  # noqa: F401
+        return True
+    except ImportError:
+        return False
+
+
+def _kokoro_generate(text, output_path, voice_id, lang_code, speed=1.0):
+    """
+    Generate audio using Kokoro and save as WAV then convert to MP3 via pygame.
+    Falls back to saving as WAV if output_path ends in .mp3 (pygame can play both).
+    """
+    from kokoro import KPipeline
+    import soundfile as sf
+    import numpy as np
+
+    pipeline = KPipeline(lang_code=lang_code)
+    chunks = []
+    for _, _, audio in pipeline(text, voice=voice_id, speed=speed):
+        chunks.append(audio)
+
+    if not chunks:
+        raise RuntimeError("Kokoro produced no audio output.")
+
+    combined = np.concatenate(chunks)
+
+    # Save as WAV (Kokoro outputs 24000 Hz)
+    # We save to a .wav even if caller asked for .mp3 — pygame handles both
+    wav_path = output_path.replace(".mp3", ".wav") if output_path.endswith(".mp3") else output_path
+    sf.write(wav_path, combined, 24000)
+
+    # If caller wants .mp3, return the .wav path instead (rename reference)
+    return wav_path
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -379,6 +466,7 @@ class TTSApp:
         self.pitch_var   = tk.DoubleVar(value=0.0)
         self.volume_var  = tk.DoubleVar(value=100.0)
         self.preview_var = tk.StringVar(value=PREVIEW_SENTENCES["en"])
+        self.engine_var  = tk.StringVar(value="Edge")   # "Edge" or "Kokoro"
         self._theme_name = "Pink"
 
         self._preview_file  = None
@@ -543,6 +631,21 @@ class TTSApp:
         self._ver_lbl = tk.Label(self._hdr, text=f"v{__version__}",
                  bg=T["PANEL"], fg=T["TEXT_DIM"], font=FONTS["small"])
         self._ver_lbl.pack(side="left", pady=14)
+
+        # ── Engine selector ──
+        eng_frame = tk.Frame(self._hdr, bg=T["PANEL"])
+        eng_frame.pack(side="left", padx=(20, 0), pady=12)
+        tk.Label(eng_frame, text="Engine:", bg=T["PANEL"],
+                 fg=T["TEXT_DIM"], font=FONTS["small"]).pack(side="left", padx=(0, 8))
+        self._engine_btns = {}
+        for eng in ("Edge", "Kokoro"):
+            btn = ThemeButton(
+                eng_frame, eng,
+                command=lambda e=eng: self._switch_engine(e),
+                active=(eng == "Edge"),
+            )
+            btn.pack(side="left", padx=3)
+            self._engine_btns[eng] = btn
 
         # Theme selector (right side of header)
         theme_frame = tk.Frame(self._hdr, bg=T["PANEL"])
@@ -898,6 +1001,10 @@ class TTSApp:
         self._ver_lbl.configure(bg=T["PANEL"], fg=T["TEXT_DIM"])
         self._hdr.configure(bg=T["PANEL"])
 
+        # Engine selector buttons
+        for btn in self._engine_btns.values():
+            btn.retheme()
+
         # Native title bar
         self._apply_titlebar_theme()
 
@@ -946,6 +1053,34 @@ class TTSApp:
             self._pane.sash_place(0, 0, int(total * 0.50))
         else:
             self.root.after(100, self._set_initial_sash)
+
+    def _switch_engine(self, engine: str):
+        """Switch between Edge TTS and Kokoro engine."""
+        if engine == "Kokoro" and not _kokoro_available():
+            messagebox.showwarning(
+                "Kokoro not installed",
+                "The kokoro and soundfile packages are required.\n\n"
+                "Install them with:\n"
+                "  pip install kokoro soundfile\n\n"
+                "You also need espeak-ng installed on your system:\n"
+                "  https://github.com/espeak-ng/espeak-ng/releases\n\n"
+                "Download the .msi installer, install it, then restart the app."
+            )
+            return
+
+        self.engine_var.set(engine)
+        for name, btn in self._engine_btns.items():
+            btn.set_active(name == engine)
+
+        # Rebuild the voice dropdown with the appropriate voice list
+        voices = list(KOKORO_VOICES.keys()) if engine == "Kokoro" else list(VOICES.keys())
+        self.voice_var.set(voices[0])
+        menu = self._voice_menu["menu"]
+        menu.delete(0, "end")
+        for v in voices:
+            menu.add_command(label=v, command=lambda val=v: self.voice_var.set(val))
+        self._voice_menu.configure(width=42)
+        self._sync_preview_text()
 
     def _update_stats(self, *_):
         txt = self.text_input.get("1.0", "end").strip()
@@ -1006,10 +1141,13 @@ class TTSApp:
 
     def _preview_thread(self, text):
         try:
-            tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".mp3")
+            # Kokoro outputs WAV; Edge outputs MP3 — use appropriate suffix
+            suffix = ".wav" if self.engine_var.get() == "Kokoro" else ".mp3"
+            tmp = tempfile.NamedTemporaryFile(delete=False, suffix=suffix)
             tmp.close()
             self._preview_file = tmp.name
             self._make_audio(text, self._preview_file)
+            # _make_audio may update self._preview_file for Kokoro
             pygame.mixer.music.load(self._preview_file)
             pygame.mixer.music.play()
             self._is_playing = True
@@ -1096,6 +1234,20 @@ class TTSApp:
     # ── Audio ─────────────────────────────────────────────────────────────────
 
     def _make_audio(self, text, path):
+        engine = self.engine_var.get()
+
+        if engine == "Kokoro":
+            voice_label = self.voice_var.get()
+            voice_id, lang_code = KOKORO_VOICES[voice_label]
+            speed = self.speed_var.get()
+            # Kokoro returns a .wav path (may differ from requested path)
+            actual_path = _kokoro_generate(text, path, voice_id, lang_code, speed)
+            # Update path reference so preview/export uses the right file
+            if actual_path != path:
+                self._preview_file = actual_path
+            return
+
+        # Edge TTS
         voice = VOICES[self.voice_var.get()]
         rate  = _rate_str(self.speed_var.get())
         vol   = _volume_str(self.volume_var.get())

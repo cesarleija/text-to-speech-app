@@ -23,6 +23,12 @@ dependencies = [
     "pygame-ce>=2.5.0",
 ]
 
+[project.optional-dependencies]
+kokoro = [
+    "kokoro>=0.9.4",
+    "soundfile>=0.12.1",
+]
+
 [project.gui-scripts]
 kaori-voice-studio = "kaori_voice_studio.app:main"
 
