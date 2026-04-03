@@ -357,18 +357,19 @@ class TTSApp:
     def __init__(self, root):
         self.root = root
         self.root.title("Kaori Voice Studio")
+        self.root.resizable(True, True)
         self.root.minsize(MIN_W, MIN_H)
 
-        # ── Custom window chrome ──────────────────────────────────────────────
-        # Do NOT use overrideredirect — it breaks virtual desktop tracking.
-        # Instead strip the title bar via Win32 API while keeping DWM active.
-        self.root.update_idletasks()   # ensure hwnd is valid before API calls
+        # Strip native title bar via Win32 API (keeps virtual desktop tracking)
+        self.root.update_idletasks()
         self._setup_native_frame()
 
-        # Restore resize capability via manual grip
-        self._resize_active = False
-        self._resize_start   = None
-        self._resize_geom    = None
+        self._preview_file  = None
+        self._is_playing    = False
+        self._active_source = None
+        self._all_widgets   = []
+        self._sliders       = []
+        self._theme_btns    = {}
 
         pygame.mixer.init()
 
@@ -385,12 +386,10 @@ class TTSApp:
         self._all_widgets   = []
         self._sliders       = []
         self._theme_btns    = {}
-        self._maximized     = False
-        self._restore_geom  = None
 
         self.voice_var.trace_add("write", self._sync_preview_text)
         self._build()
-        # Custom close handler (no WM_DELETE_WINDOW needed with overrideredirect)
+        self.root.protocol("WM_DELETE_WINDOW", self._on_close)
 
     def _setup_native_frame(self):
         """
@@ -466,48 +465,24 @@ class TTSApp:
     def _build(self):
         self._apply_theme()
 
-        # ── Custom title bar ──
-        self._hdr = tk.Frame(self.root, bg=T["PANEL"], height=48)
+        # ── Header ──
+        self._hdr = tk.Frame(self.root, bg=T["PANEL"])
         self._hdr.pack(fill="x", side="top")
-        self._hdr.pack_propagate(False)
 
-        # Drag to move
-        self._hdr.bind("<ButtonPress-1>",   self._drag_start)
-        self._hdr.bind("<B1-Motion>",       self._drag_move)
-        self._hdr.bind("<Double-Button-1>", self._toggle_maximize)
-
-        # App icon dot + title
         tk.Label(self._hdr, text="●", bg=T["PANEL"], fg=T["ACCENT"],
                  font=("Segoe UI", 10)).pack(side="left", padx=(16, 4), pady=14)
         self._title_lbl = tk.Label(self._hdr, text="Kaori Voice Studio",
                  bg=T["PANEL"], fg=T["TEXT"], font=FONTS["title"])
         self._title_lbl.pack(side="left", padx=(0, 6), pady=14)
-        self._title_lbl.bind("<ButtonPress-1>",   self._drag_start)
-        self._title_lbl.bind("<B1-Motion>",       self._drag_move)
-        self._title_lbl.bind("<Double-Button-1>", self._toggle_maximize)
 
         from kaori_voice_studio.version import __version__
         self._ver_lbl = tk.Label(self._hdr, text=f"v{__version__}",
                  bg=T["PANEL"], fg=T["TEXT_DIM"], font=FONTS["small"])
         self._ver_lbl.pack(side="left", pady=14)
-        self._ver_lbl.bind("<ButtonPress-1>",   self._drag_start)
-        self._ver_lbl.bind("<B1-Motion>",       self._drag_move)
-        self._ver_lbl.bind("<Double-Button-1>", self._toggle_maximize)
 
-        # ── Window control buttons (right side) ──
-        ctrl_frame = tk.Frame(self._hdr, bg=T["PANEL"])
-        ctrl_frame.pack(side="right")
-
-        self._min_btn  = self._chrome_btn(ctrl_frame, "─", self._minimize,  hover="#2A3050")
-        self._max_btn  = self._chrome_btn(ctrl_frame, "□", self._toggle_maximize, hover="#2A3050")
-        self._close_btn= self._chrome_btn(ctrl_frame, "✕", self._on_close,  hover="#E8387A")
-        self._min_btn.pack(side="left")
-        self._max_btn.pack(side="left")
-        self._close_btn.pack(side="left")
-
-        # Theme selector (left of window controls)
+        # Theme selector (right side of header)
         theme_frame = tk.Frame(self._hdr, bg=T["PANEL"])
-        theme_frame.pack(side="right", padx=(0, 8), pady=10)
+        theme_frame.pack(side="right", padx=20, pady=12)
         tk.Label(theme_frame, text="Theme:", bg=T["PANEL"],
                  fg=T["TEXT_DIM"], font=FONTS["small"]).pack(side="left", padx=(0, 8))
         for name in THEMES:
@@ -516,7 +491,7 @@ class TTSApp:
                 command=lambda n=name: self._switch_theme(n),
                 active=(name == self._theme_name),
             )
-            btn.pack(side="left", padx=3)
+            btn.pack(side="left", padx=5)
             self._theme_btns[name] = btn
 
         # Accent bar
@@ -528,15 +503,6 @@ class TTSApp:
         self._ftr.pack(fill="x", side="bottom")
         tk.Frame(self._ftr, bg=T["BORDER"], height=1).pack(fill="x")
         self._build_footer(self._ftr)
-
-        # ── Resize grip (bottom-right corner) ──
-        self._grip = tk.Label(self.root, text="◢", bg=T["BG"],
-                              fg=T["BORDER"], font=("Segoe UI", 10),
-                              cursor="size_nw_se")
-        self._grip.place(relx=1.0, rely=1.0, anchor="se", x=-2, y=-2)
-        self._grip.bind("<ButtonPress-1>",   self._resize_start)
-        self._grip.bind("<B1-Motion>",       self._resize_do)
-        self._grip.bind("<ButtonRelease-1>", self._resize_end)
 
         # ── Body ──
         self._body = tk.Frame(self.root, bg=T["BG"])
@@ -567,10 +533,6 @@ class TTSApp:
         self._build_voice_card(self._pane)
         self._build_controls_card(self._right)
 
-        # Add edge resize strips across all 8 zones
-        self.root.update_idletasks()
-        self._add_resize_edges()
-
         # Set initial sash position after geometry is resolved (65% text / 35% voice)
         self.root.update_idletasks()
         total = self._pane.winfo_height()
@@ -578,149 +540,6 @@ class TTSApp:
             self._pane.sash_place(0, 0, int(total * 0.50))
         else:
             self.root.after(100, self._set_initial_sash)
-
-    def _chrome_btn(self, parent, symbol, command, hover="#2A3050"):
-        """Small frameless window-control button."""
-        f = tk.Frame(parent, bg=T["PANEL"], cursor="hand2")
-        f.config(width=46, height=48)
-        f.pack_propagate(False)
-        lbl = tk.Label(f, text=symbol, bg=T["PANEL"], fg=T["TEXT_DIM"],
-                       font=("Segoe UI", 11), cursor="hand2")
-        lbl.pack(expand=True)
-        # Store refs for retheme
-        f._hover_color = hover
-        f._lbl = lbl
-        for w in (f, lbl):
-            w.bind("<Enter>",           lambda e, fr=f, h=hover: (
-                fr.configure(bg=h), fr._lbl.configure(bg=h, fg="white")))
-            w.bind("<Leave>",           lambda e, fr=f: (
-                fr.configure(bg=T["PANEL"]), fr._lbl.configure(bg=T["PANEL"], fg=T["TEXT_DIM"])))
-            w.bind("<ButtonRelease-1>", lambda e: command())
-        return f
-
-    # ── Window drag ──────────────────────────────────────────────────────────
-
-    def _drag_start(self, e):
-        self._drag_x = e.x_root - self.root.winfo_x()
-        self._drag_y = e.y_root - self.root.winfo_y()
-
-    def _drag_move(self, e):
-        if self._maximized:
-            return
-        x = e.x_root - self._drag_x
-        y = e.y_root - self._drag_y
-        self.root.geometry(f"+{x}+{y}")
-
-    # ── Window controls ───────────────────────────────────────────────────────
-
-    def _minimize(self):
-        self.root.iconify()
-
-    def _on_restore(self, e):
-        pass  # no-op — overrideredirect no longer used
-
-    def _toggle_maximize(self, e=None):
-        if self._maximized:
-            self._maximized = False
-            self._max_btn._lbl.configure(text="□")
-            self.root.geometry(self._restore_geom)
-        else:
-            self._restore_geom = self.root.geometry()
-            self._maximized = True
-            self._max_btn._lbl.configure(text="❐")
-            sw = self.root.winfo_screenwidth()
-            sh = self.root.winfo_screenheight()
-            # Account for taskbar by using work area
-            try:
-                import ctypes
-                rc = ctypes.wintypes.RECT()
-                ctypes.windll.user32.SystemParametersInfoW(0x0030, 0, ctypes.byref(rc), 0)
-                self.root.geometry(
-                    f"{rc.right - rc.left}x{rc.bottom - rc.top}+{rc.left}+{rc.top}")
-            except Exception:
-                self.root.geometry(f"{sw}x{sh}+0+0")
-
-    # ── Window resize ────────────────────────────────────────────────────────
-
-    EDGE = 6  # px — thickness of each resize border
-
-    def _add_resize_edges(self):
-        """Create invisible resize strips along all 4 edges and 4 corners."""
-        e = self.EDGE
-        edges = {
-            # name        : (relx, rely, relw, relh, anchor, cursor,        dx dy dw dh)
-            "n"  : (0,   0,   1,   0,   "nw", "size_ns",     0, -1, 0,  1),
-            "s"  : (0,   1,   1,   0,   "sw", "size_ns",     0,  0, 0,  1),
-            "w"  : (0,   0,   0,   1,   "nw", "size_we",    -1,  0, 1,  0),
-            "e"  : (1,   0,   0,   1,   "ne", "size_we",     0,  0, 1,  0),
-            "nw" : (0,   0,   0,   0,   "nw", "size_nw_se", -1, -1, 1,  1),
-            "ne" : (1,   0,   0,   0,   "ne", "size_ne_sw",  0, -1, 1,  1),
-            "sw" : (0,   1,   0,   0,   "sw", "size_ne_sw", -1,  0, 1,  1),
-            "se" : (1,   1,   0,   0,   "se", "size_nw_se",  0,  0, 1,  1),
-        }
-        self._resize_strips = {}
-        for name, (rx, ry, rw, rh, anchor, cursor, *dirs) in edges.items():
-            # For edges use thickness e; for corners use e×e square
-            w = e if rw == 0 else None
-            h = e if rh == 0 else None
-            strip = tk.Frame(self.root, bg=T["BG"], cursor=cursor)
-            place_kw = dict(relx=rx, rely=ry, anchor=anchor)
-            if w:  place_kw["width"]  = w
-            if h:  place_kw["height"] = h
-            if rw: place_kw["relwidth"]  = rw
-            if rh: place_kw["relheight"] = rh
-            # Corner size
-            if rw == 0 and rh == 0:
-                place_kw["width"]  = e * 3
-                place_kw["height"] = e * 3
-            strip.place(**place_kw)
-            strip.bind("<ButtonPress-1>",
-                       lambda ev, d=dirs: self._edge_start(ev, d))
-            strip.bind("<B1-Motion>",
-                       lambda ev, d=dirs: self._edge_move(ev, d))
-            strip.bind("<ButtonRelease-1>", self._resize_end)
-            self._resize_strips[name] = strip
-            strip.lift()
-
-    def _edge_start(self, e, dirs):
-        if self._maximized:
-            return
-        self._resize_active = True
-        self._resize_dirs   = dirs        # (dx, dy, dw, dh) flags
-        self._resize_start  = (e.x_root, e.y_root)
-        self._resize_geom   = (self.root.winfo_width(),  self.root.winfo_height(),
-                               self.root.winfo_x(),      self.root.winfo_y())
-
-    def _edge_move(self, e, dirs):
-        if not self._resize_active or self._maximized:
-            return
-        ddx, ddy, ddw, ddh = dirs
-        ox, oy = self._resize_start
-        ow, oh, gx, gy = self._resize_geom
-        mx = e.x_root - ox
-        my = e.y_root - oy
-
-        nw = max(MIN_W, ow + ddw * mx)
-        nh = max(MIN_H, oh + ddh * my)
-        nx = gx + ddx * mx  if ddx else gx
-        ny = gy + ddy * my  if ddy else gy
-
-        # Clamp left/top edges so window doesn't grow past min size
-        if ddx and nw == MIN_W:
-            nx = gx + ow - MIN_W
-        if ddy and nh == MIN_H:
-            ny = gy + oh - MIN_H
-
-        self.root.geometry(f"{int(nw)}x{int(nh)}+{int(nx)}+{int(ny)}")
-
-    def _resize_start(self, e):
-        self._edge_start(e, (0, 0, 1, 1))   # SE corner fallback
-
-    def _resize_do(self, e):
-        self._edge_move(e, (0, 0, 1, 1))
-
-    def _resize_end(self, e=None):
-        self._resize_active = False
 
     # ── Cards ─────────────────────────────────────────────────────────────────
 
@@ -1010,16 +829,10 @@ class TTSApp:
         # Accent bar
         self._accent_bar.configure(bg=T["ACCENT"])
 
-        # Chrome buttons + grip
-        for btn in (self._min_btn, self._max_btn, self._close_btn):
-            btn.configure(bg=T["PANEL"])
-            btn._lbl.configure(bg=T["PANEL"], fg=T["TEXT_DIM"])
-        self._grip.configure(bg=T["BG"], fg=T["BORDER"])
+        # Header labels
         self._title_lbl.configure(bg=T["PANEL"], fg=T["TEXT"])
         self._ver_lbl.configure(bg=T["PANEL"], fg=T["TEXT_DIM"])
         self._hdr.configure(bg=T["PANEL"])
-        for strip in self._resize_strips.values():
-            strip.configure(bg=T["BG"])
 
         # PanedWindow sash
         self._pane.configure(bg=T["BG"])
