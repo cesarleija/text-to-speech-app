@@ -29,3 +29,6 @@ kaori-voice-studio = "kaori_voice_studio.app:main"
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["kaori_voice_studio*"]
+
+[tool.setuptools.package-data]
+kaori_voice_studio = ["*.ico"]
