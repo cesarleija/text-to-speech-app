@@ -109,39 +109,39 @@ RIGHT_PANEL_W  = 230
 
 KOKORO_VOICES = {
     # American English – Female
-    "🇺🇸  Heart (Female · Warm)"      : ("af_heart",    "a"),
-    "🇺🇸  Bella (Female · Soft)"      : ("af_bella",    "a"),
-    "🇺🇸  Sarah (Female · Natural)"   : ("af_sarah",    "a"),
-    "🇺🇸  Nicole (Female · Whisper)"  : ("af_nicole",   "a"),
-    "🇺🇸  Sky (Female · Airy)"        : ("af_sky",      "a"),
-    "🇺🇸  Alloy (Female · Clear)"     : ("af_alloy",    "a"),
-    "🇺🇸  Nova (Female · Bright)"     : ("af_nova",     "a"),
-    "🇺🇸  River (Female · Calm)"      : ("af_river",    "a"),
-    "🇺🇸  Jessica (Female · Warm)"    : ("af_jessica",  "a"),
-    "🇺🇸  Kore (Female · Strong)"     : ("af_kore",     "a"),
-    "🇺🇸  Aoede (Female · Musical)"   : ("af_aoede",    "a"),
+    "🇺🇸  Heart (Female · Warm)"      : ("af_heart",    "en-us"),
+    "🇺🇸  Bella (Female · Soft)"      : ("af_bella",    "en-us"),
+    "🇺🇸  Sarah (Female · Natural)"   : ("af_sarah",    "en-us"),
+    "🇺🇸  Nicole (Female · Whisper)"  : ("af_nicole",   "en-us"),
+    "🇺🇸  Sky (Female · Airy)"        : ("af_sky",      "en-us"),
+    "🇺🇸  Alloy (Female · Clear)"     : ("af_alloy",    "en-us"),
+    "🇺🇸  Nova (Female · Bright)"     : ("af_nova",     "en-us"),
+    "🇺🇸  River (Female · Calm)"      : ("af_river",    "en-us"),
+    "🇺🇸  Jessica (Female · Warm)"    : ("af_jessica",  "en-us"),
+    "🇺🇸  Kore (Female · Strong)"     : ("af_kore",     "en-us"),
+    "🇺🇸  Aoede (Female · Musical)"   : ("af_aoede",    "en-us"),
     # American English – Male
-    "🇺🇸  Adam (Male · Deep)"         : ("am_adam",     "a"),
-    "🇺🇸  Michael (Male · Warm)"      : ("am_michael",  "a"),
-    "🇺🇸  Echo (Male · Clear)"        : ("am_echo",     "a"),
-    "🇺🇸  Eric (Male · Natural)"      : ("am_eric",     "a"),
-    "🇺🇸  Fenrir (Male · Strong)"     : ("am_fenrir",   "a"),
-    "🇺🇸  Liam (Male · Friendly)"     : ("am_liam",     "a"),
-    "🇺🇸  Onyx (Male · Deep)"         : ("am_onyx",     "a"),
-    "🇺🇸  Puck (Male · Playful)"      : ("am_puck",     "a"),
+    "🇺🇸  Adam (Male · Deep)"         : ("am_adam",     "en-us"),
+    "🇺🇸  Michael (Male · Warm)"      : ("am_michael",  "en-us"),
+    "🇺🇸  Echo (Male · Clear)"        : ("am_echo",     "en-us"),
+    "🇺🇸  Eric (Male · Natural)"      : ("am_eric",     "en-us"),
+    "🇺🇸  Fenrir (Male · Strong)"     : ("am_fenrir",   "en-us"),
+    "🇺🇸  Liam (Male · Friendly)"     : ("am_liam",     "en-us"),
+    "🇺🇸  Onyx (Male · Deep)"         : ("am_onyx",     "en-us"),
+    "🇺🇸  Puck (Male · Playful)"      : ("am_puck",     "en-us"),
     # British English – Female
-    "🇬🇧  Emma (Female · Elegant)"    : ("bf_emma",     "b"),
-    "🇬🇧  Alice (Female · Clear)"     : ("bf_alice",    "b"),
-    "🇬🇧  Isabella (Female · Warm)"   : ("bf_isabella", "b"),
-    "🇬🇧  Lily (Female · Soft)"       : ("bf_lily",     "b"),
+    "🇬🇧  Emma (Female · Elegant)"    : ("bf_emma",     "en-gb"),
+    "🇬🇧  Alice (Female · Clear)"     : ("bf_alice",    "en-gb"),
+    "🇬🇧  Isabella (Female · Warm)"   : ("bf_isabella", "en-gb"),
+    "🇬🇧  Lily (Female · Soft)"       : ("bf_lily",     "en-gb"),
     # British English – Male
-    "🇬🇧  George (Male · Authoritative)": ("bm_george", "b"),
-    "🇬🇧  Lewis (Male · Natural)"     : ("bm_lewis",    "b"),
-    "🇬🇧  Daniel (Male · Warm)"       : ("bm_daniel",   "b"),
-    "🇬🇧  Fable (Male · Story)"       : ("bm_fable",    "b"),
-    # Child-like / High pitch (use af_sky + speed adjustment for best result)
-    "🧒  Child · Girl (Sky)"          : ("af_sky",      "a"),
-    "🧒  Child · Boy (Puck)"          : ("am_puck",     "a"),
+    "🇬🇧  George (Male · Authoritative)": ("bm_george", "en-gb"),
+    "🇬🇧  Lewis (Male · Natural)"     : ("bm_lewis",    "en-gb"),
+    "🇬🇧  Daniel (Male · Warm)"       : ("bm_daniel",   "en-gb"),
+    "🇬🇧  Fable (Male · Story)"       : ("bm_fable",    "en-gb"),
+    # Child-like voices
+    "🧒  Child · Girl (Sky)"          : ("af_sky",      "en-us"),
+    "🧒  Child · Boy (Puck)"          : ("am_puck",     "en-us"),
 }
 
 KOKORO_ESPEAK_INSTALL = (
@@ -170,40 +170,55 @@ def _pitch_str(hz):
 
 
 def _kokoro_available():
-    """Check if kokoro and soundfile packages are importable."""
+    """Check if kokoro-onnx and soundfile packages are importable."""
     try:
-        import kokoro  # noqa: F401
-        import soundfile  # noqa: F401
+        import kokoro_onnx  # noqa: F401
+        import soundfile    # noqa: F401
         return True
     except ImportError:
         return False
 
 
+# Lazily loaded Kokoro instance — downloaded on first use
+_kokoro_instance = None
+_KOKORO_MODEL_URL  = "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/kokoro-v1.0.onnx"
+_KOKORO_VOICES_URL = "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/voices-v1.0.bin"
+
+
+def _get_kokoro():
+    """Return a cached Kokoro ONNX instance, downloading model files if needed."""
+    global _kokoro_instance
+    if _kokoro_instance is not None:
+        return _kokoro_instance
+
+    import urllib.request
+    from kokoro_onnx import Kokoro
+
+    cache_dir = Path.home() / ".kaori_voice_studio" / "kokoro"
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    model_path  = cache_dir / "kokoro-v1.0.onnx"
+    voices_path = cache_dir / "voices-v1.0.bin"
+
+    if not model_path.exists():
+        urllib.request.urlretrieve(_KOKORO_MODEL_URL, model_path)
+    if not voices_path.exists():
+        urllib.request.urlretrieve(_KOKORO_VOICES_URL, voices_path)
+
+    _kokoro_instance = Kokoro(str(model_path), str(voices_path))
+    return _kokoro_instance
+
+
 def _kokoro_generate(text, output_path, voice_id, lang_code, speed=1.0):
-    """
-    Generate audio using Kokoro and save as WAV then convert to MP3 via pygame.
-    Falls back to saving as WAV if output_path ends in .mp3 (pygame can play both).
-    """
-    from kokoro import KPipeline
+    """Generate audio using Kokoro ONNX and save as WAV."""
     import soundfile as sf
-    import numpy as np
 
-    pipeline = KPipeline(lang_code=lang_code)
-    chunks = []
-    for _, _, audio in pipeline(text, voice=voice_id, speed=speed):
-        chunks.append(audio)
+    kokoro = _get_kokoro()
+    samples, sample_rate = kokoro.create(
+        text, voice=voice_id, speed=speed, lang=lang_code
+    )
 
-    if not chunks:
-        raise RuntimeError("Kokoro produced no audio output.")
-
-    combined = np.concatenate(chunks)
-
-    # Save as WAV (Kokoro outputs 24000 Hz)
-    # We save to a .wav even if caller asked for .mp3 — pygame handles both
     wav_path = output_path.replace(".mp3", ".wav") if output_path.endswith(".mp3") else output_path
-    sf.write(wav_path, combined, 24000)
-
-    # If caller wants .mp3, return the .wav path instead (rename reference)
+    sf.write(wav_path, samples, sample_rate)
     return wav_path
 
 
@@ -1059,12 +1074,12 @@ class TTSApp:
         if engine == "Kokoro" and not _kokoro_available():
             messagebox.showwarning(
                 "Kokoro not installed",
-                "The kokoro and soundfile packages are required.\n\n"
+                "The kokoro-onnx and soundfile packages are required.\n\n"
                 "Install them with:\n"
-                "  pip install kokoro soundfile\n\n"
-                "You also need espeak-ng installed on your system:\n"
-                "  https://github.com/espeak-ng/espeak-ng/releases\n\n"
-                "Download the .msi installer, install it, then restart the app."
+                "  pip install kokoro-onnx soundfile\n\n"
+                "Then restart Kaori Voice Studio.\n\n"
+                "The model files (~300 MB) will be downloaded automatically\n"
+                "on first use."
             )
             return
 

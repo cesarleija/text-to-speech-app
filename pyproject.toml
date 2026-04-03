@@ -25,7 +25,7 @@ dependencies = [
 
 [project.optional-dependencies]
 kokoro = [
-    "kokoro>=0.9.4",
+    "kokoro-onnx>=0.4.9",
     "soundfile>=0.12.1",
 ]
 
