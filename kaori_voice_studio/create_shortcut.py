@@ -42,13 +42,55 @@ def find_icon():
     return None
 
 
+def get_desktop():
+    """
+    Get the real Desktop path, handling:
+    - Standard: C:\\Users\\Name\\Desktop
+    - OneDrive personal: C:\\Users\\Name\\OneDrive\\Desktop
+    - OneDrive corporate: C:\\Users\\Name\\OneDrive - Company\\Desktop
+    """
+    # 1. Try Windows Shell API first (most reliable)
+    try:
+        import ctypes
+        import ctypes.wintypes
+        CSIDL_DESKTOP = 0x0000
+        buf = ctypes.create_unicode_buffer(ctypes.wintypes.MAX_PATH)
+        ctypes.windll.shell32.SHGetFolderPathW(0, CSIDL_DESKTOP, 0, 0, buf)
+        p = Path(buf.value)
+        if p.exists():
+            return p
+    except Exception:
+        pass
+
+    # 2. Search for Desktop under OneDrive folders (personal and corporate)
+    home = Path.home()
+    candidates = [
+        home / "Desktop",
+    ]
+    # Add any OneDrive* folders found in the home directory
+    try:
+        for item in home.iterdir():
+            if item.is_dir() and item.name.lower().startswith("onedrive"):
+                candidates.append(item / "Desktop")
+    except Exception:
+        pass
+
+    for p in candidates:
+        if p.exists():
+            return p
+
+    # 3. Last resort: return ~/Desktop even if it doesn't exist
+    return home / "Desktop"
+
+
 def create_shortcut():
     """Create the Desktop shortcut. Returns True on success."""
     if sys.platform != "win32":
         print("Desktop shortcut creation is only supported on Windows.")
         return False
 
-    desktop = Path.home() / "Desktop"
+    desktop = get_desktop()
+    print(f"  Desktop path     : {desktop}")
     shortcut_path = desktop / "Kaori Voice Studio.lnk"
     entry_point = find_entry_point()
     icon_path = find_icon()
