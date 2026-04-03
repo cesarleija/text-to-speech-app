@@ -20,7 +20,7 @@ classifiers = [
 
 dependencies = [
     "edge-tts>=6.1.9",
-    "pygame>=2.5.0",
+    "pygame-ce>=2.5.0",
 ]
 
 [project.scripts]
