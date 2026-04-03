@@ -26,6 +26,9 @@ dependencies = [
 [project.gui-scripts]
 kaori-voice-studio = "kaori_voice_studio.app:main"
 
+[project.scripts]
+kaori-voice-studio-setup = "kaori_voice_studio.create_shortcut:main"
+
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["kaori_voice_studio*"]
