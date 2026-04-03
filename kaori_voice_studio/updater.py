@@ -2,12 +2,16 @@
 kaori_voice_studio.updater
 Checks GitHub for a newer version on each launch.
 If an update is found, installs it via pip then relaunches safely.
+All errors are written to kaori_update.log in the user's home folder.
 """
 
 import sys
 import subprocess
 import urllib.request
 import re
+import traceback
+from datetime import datetime
+from pathlib import Path
 
 
 # ── Configuration ─────────────────────────────────────────────────────────────
@@ -23,11 +27,23 @@ GITHUB_INSTALL_URL = (
 
 CHECK_TIMEOUT = 4   # seconds — skip update check if GitHub is slow or offline
 
+LOG_FILE = Path.home() / "kaori_update.log"
+
+
+# ── Logging ───────────────────────────────────────────────────────────────────
+
+def _log(msg: str):
+    """Append a timestamped line to the log file."""
+    try:
+        with open(LOG_FILE, "a", encoding="utf-8") as f:
+            f.write(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] {msg}\n")
+    except Exception:
+        pass
+
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 def _parse_version(text: str):
-    """Extract a version tuple from a version.py file, e.g. '1.2.3' → (1,2,3)."""
     m = re.search(r'__version__\s*=\s*["\']([^"\']+)["\']', text)
     if not m:
         return None
@@ -40,85 +56,79 @@ def _parse_version(text: str):
 def _current_version():
     try:
         from kaori_voice_studio.version import __version__
-        return tuple(int(x) for x in __version__.split("."))
-    except Exception:
+        v = tuple(int(x) for x in __version__.split("."))
+        _log(f"Current version: {__version__}")
+        return v
+    except Exception as e:
+        _log(f"Could not read current version: {e}")
         return (0, 0, 0)
 
 
 def _remote_version():
-    """Fetch version.py from GitHub and parse it. Returns None on any failure."""
     try:
         req = urllib.request.Request(
             GITHUB_RAW_VERSION_URL,
             headers={"Cache-Control": "no-cache"},
         )
         with urllib.request.urlopen(req, timeout=CHECK_TIMEOUT) as resp:
-            return _parse_version(resp.read().decode())
-    except Exception:
+            content = resp.read().decode()
+            v = _parse_version(content)
+            _log(f"Remote version fetched: {v}")
+            return v
+    except Exception as e:
+        _log(f"Could not fetch remote version: {e}")
         return None
 
 
 def _run_update():
-    """
-    Run pip install --upgrade in a subprocess.
-    Uses sys.executable so we always call the same Python that's running now.
-    Returns True on success.
-    """
-    result = subprocess.run(
-        [
-            sys.executable, "-m", "pip", "install",
-            "--upgrade", "--quiet", "--no-warn-script-location",
-            GITHUB_INSTALL_URL,
-        ],
-        capture_output=True,
-        text=True,
-    )
-    return result.returncode == 0
+    cmd = [
+        sys.executable, "-m", "pip", "install",
+        "--upgrade", "--quiet", "--no-warn-script-location",
+        GITHUB_INSTALL_URL,
+    ]
+    _log(f"Running update: {' '.join(cmd)}")
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        _log(f"pip returncode: {result.returncode}")
+        if result.stdout.strip():
+            _log(f"pip stdout: {result.stdout.strip()}")
+        if result.stderr.strip():
+            _log(f"pip stderr: {result.stderr.strip()}")
+        return result.returncode == 0
+    except Exception as e:
+        _log(f"Exception running pip: {e}\n{traceback.format_exc()}")
+        return False
+
+
+def _scripts_dir():
+    return Path(sys.executable).parent / "Scripts"
 
 
 def _relaunch():
     """
-    Spawn a fresh copy of the app and exit the current process.
-
-    os.execv() is unreliable on Windows (especially with pythonw.exe),
-    so we use Popen to start a detached child process and then call sys.exit().
-    The child inherits nothing from the current (possibly partially-updated)
-    process, so it picks up the freshly installed package cleanly.
+    Relaunch the app as a detached subprocess and exit the current process.
+    Using 'python -m kaori_voice_studio.app' is the most reliable method on
+    Windows — it avoids the pythonw.exe + .exe double-invocation issue that
+    occurs with pip gui-scripts launchers.
     """
-    import os
+    # Always use python -m — safe on all Windows Python installs
+    cmd = [sys.executable, "-m", "kaori_voice_studio.app"]
 
-    # Find the entry-point script pip installed (gui-scripts variant)
-    scripts_dir = _scripts_dir()
-    launcher = None
-    for name in ("kaori-voice-studio.exe", "kaori-voice-studio-script.pyw",
-                 "kaori-voice-studio"):
-        candidate = scripts_dir / name
-        if candidate.exists():
-            launcher = str(candidate)
-            break
+    _log(f"Relaunching with: {' '.join(cmd)}")
 
-    if launcher and launcher.endswith(".exe"):
-        cmd = [launcher]
-    elif launcher:
-        cmd = [sys.executable, launcher]
-    else:
-        # Fallback: python -m kaori_voice_studio.app
-        cmd = [sys.executable, "-m", "kaori_voice_studio.app"]
-
-    kwargs = dict(close_fds=True)
+    kwargs = {}
     if sys.platform == "win32":
-        # Detach completely from the current console / window
-        DETACHED_PROCESS      = 0x00000008
+        DETACHED_PROCESS         = 0x00000008
         CREATE_NEW_PROCESS_GROUP = 0x00000200
-        kwargs["creationflags"] = DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP
+        kwargs["creationflags"]  = DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP
 
-    subprocess.Popen(cmd, **kwargs)
+    try:
+        subprocess.Popen(cmd, **kwargs)
+        _log("Relaunch spawned — exiting current process.")
+    except Exception as e:
+        _log(f"Relaunch failed: {e}\n{traceback.format_exc()}")
+
     sys.exit(0)
-
-
-def _scripts_dir():
-    from pathlib import Path
-    return Path(sys.executable).parent / "Scripts"
 
 
 # ── Public API ────────────────────────────────────────────────────────────────
@@ -126,42 +136,46 @@ def _scripts_dir():
 def check_and_update(on_checking=None, on_update_found=None,
                      on_updated=None, on_no_update=None,
                      on_error=None):
-    """
-    Check GitHub for a newer version. If found, update silently and relaunch.
+    _log("=== Update check started ===")
+    try:
+        if on_checking:
+            on_checking()
 
-    Callbacks (all optional):
-        on_checking()          called before the network request
-        on_update_found(v)     called with the new version string
-        on_updated()           called after a successful pip install
-        on_no_update()         called when already on the latest version
-        on_error(msg)          called on any non-fatal failure
-    """
-    if on_checking:
-        on_checking()
+        current = _current_version()
+        remote  = _remote_version()
 
-    current = _current_version()
-    remote  = _remote_version()
+        if remote is None:
+            msg = "No internet — skipping update check."
+            _log(msg)
+            if on_error:
+                on_error(msg)
+            return
 
-    if remote is None:
+        if remote <= current:
+            _log("Already up to date.")
+            if on_no_update:
+                on_no_update()
+            return
+
+        remote_str = ".".join(str(x) for x in remote)
+        _log(f"Update available: {remote_str}")
+        if on_update_found:
+            on_update_found(remote_str)
+
+        success = _run_update()
+
+        if success:
+            _log("Update successful — relaunching.")
+            if on_updated:
+                on_updated()
+            _relaunch()
+        else:
+            msg = "Update failed — launching current version."
+            _log(msg)
+            if on_error:
+                on_error(msg)
+
+    except Exception as e:
+        _log(f"Unhandled exception in check_and_update:\n{traceback.format_exc()}")
         if on_error:
-            on_error("No internet — skipping update check.")
-        return
-
-    if remote <= current:
-        if on_no_update:
-            on_no_update()
-        return
-
-    remote_str = ".".join(str(x) for x in remote)
-    if on_update_found:
-        on_update_found(remote_str)
-
-    success = _run_update()
-
-    if success:
-        if on_updated:
-            on_updated()
-        _relaunch()          # spawns fresh process, then sys.exit(0)
-    else:
-        if on_error:
-            on_error("Update failed — launching current version.")
+            on_error(str(e))
