@@ -54,14 +54,38 @@ def _parse_version(text: str):
 
 
 def _current_version():
+    """
+    Read version.py directly from disk — never from sys.modules cache.
+    This ensures we always compare against the actually installed version,
+    not a stale import from the current running process.
+    """
     try:
-        from kaori_voice_studio.version import __version__
-        v = tuple(int(x) for x in __version__.split("."))
-        _log(f"Current version: {__version__}")
-        return v
+        import importlib.resources as ir
+        ref = ir.files("kaori_voice_studio") / "version.py"
+        with ir.as_file(ref) as p:
+            content = p.read_text(encoding="utf-8")
+        v = _parse_version(content)
+        if v:
+            _log(f"Current version (from disk): {'.'.join(str(x) for x in v)}")
+            return v
     except Exception as e:
-        _log(f"Could not read current version: {e}")
-        return (0, 0, 0)
+        _log(f"importlib.resources failed: {e}")
+
+    # Fallback: find version.py via the package location
+    try:
+        import kaori_voice_studio
+        pkg_dir = Path(kaori_voice_studio.__file__).parent
+        ver_file = pkg_dir / "version.py"
+        content = ver_file.read_text(encoding="utf-8")
+        v = _parse_version(content)
+        if v:
+            _log(f"Current version (fallback path): {'.'.join(str(x) for x in v)}")
+            return v
+    except Exception as e:
+        _log(f"Fallback version read failed: {e}")
+
+    _log("Could not determine current version — defaulting to 0.0.0")
+    return (0, 0, 0)
 
 
 def _remote_version():
