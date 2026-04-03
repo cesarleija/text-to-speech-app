@@ -591,7 +591,7 @@ class TTSApp:
         )
         self._voice_menu.pack(fill="x")
 
-        # Row 2: sample text entry — fixed height with ipady
+        # Row 2: sample text — using Text widget (height=2) for reliable rendering
         sample_row = tk.Frame(inner, bg=T["PANEL"])
         sample_row.pack(fill="x", pady=(0, 8))
 
@@ -601,14 +601,22 @@ class TTSApp:
         entry_bg = tk.Frame(sample_row, bg=T["SURFACE"])
         entry_bg.pack(fill="x")
 
-        self._preview_entry = tk.Entry(
-            entry_bg, textvariable=self.preview_var,
+        self._preview_entry = tk.Text(
+            entry_bg, height=2, wrap="word",
             bg=T["SURFACE"], fg=T["TEXT"],
             insertbackground=T["ACCENT_TK"],
-            relief="flat", font=FONTS["body"], bd=0,
+            relief="flat", font=FONTS["body"], bd=8,
             selectbackground=T["ACCENT"], selectforeground=T["BTN_FG"],
         )
-        self._preview_entry.pack(fill="x", ipady=8, padx=8, pady=6)
+        self._preview_entry.pack(fill="x")
+        # Insert initial value and keep in sync with preview_var
+        self._preview_entry.insert("1.0", self.preview_var.get())
+        self._preview_entry.bind(
+            "<KeyRelease>",
+            lambda e: self.preview_var.set(
+                self._preview_entry.get("1.0", "end-1c")
+            )
+        )
 
     def _build_controls_card(self, parent):
         card, inner = self._make_card(parent, "Controls")
@@ -786,7 +794,14 @@ class TTSApp:
     def _sync_preview_text(self, *_):
         code = VOICES.get(self.voice_var.get(), "en-US")
         lang = code[:2]
-        self.preview_var.set(PREVIEW_SENTENCES.get(lang, PREVIEW_SENTENCES["en"]))
+        text = PREVIEW_SENTENCES.get(lang, PREVIEW_SENTENCES["en"])
+        self.preview_var.set(text)
+        # Also update the Text widget directly
+        try:
+            self._preview_entry.delete("1.0", "end")
+            self._preview_entry.insert("1.0", text)
+        except Exception:
+            pass
 
     def _status(self, msg, color=None):
         c = color or T["TEXT_DIM"]
