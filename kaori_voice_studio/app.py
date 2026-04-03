@@ -508,6 +508,10 @@ class TTSApp:
         self._build_voice_card(self._pane)
         self._build_controls_card(self._right)
 
+        # Add edge resize strips across all 8 zones
+        self.root.update_idletasks()
+        self._add_resize_edges()
+
         # Set initial sash position after geometry is resolved (65% text / 35% voice)
         self.root.update_idletasks()
         total = self._pane.winfo_height()
@@ -581,24 +585,86 @@ class TTSApp:
             except Exception:
                 self.root.geometry(f"{sw}x{sh}+0+0")
 
-    # ── Window resize (grip) ─────────────────────────────────────────────────
+    # ── Window resize ────────────────────────────────────────────────────────
 
-    def _resize_start(self, e):
+    EDGE = 6  # px — thickness of each resize border
+
+    def _add_resize_edges(self):
+        """Create invisible resize strips along all 4 edges and 4 corners."""
+        e = self.EDGE
+        edges = {
+            # name        : (relx, rely, relw, relh, anchor, cursor,        dx dy dw dh)
+            "n"  : (0,   0,   1,   0,   "nw", "size_ns",     0, -1, 0,  1),
+            "s"  : (0,   1,   1,   0,   "sw", "size_ns",     0,  0, 0,  1),
+            "w"  : (0,   0,   0,   1,   "nw", "size_we",    -1,  0, 1,  0),
+            "e"  : (1,   0,   0,   1,   "ne", "size_we",     0,  0, 1,  0),
+            "nw" : (0,   0,   0,   0,   "nw", "size_nw_se", -1, -1, 1,  1),
+            "ne" : (1,   0,   0,   0,   "ne", "size_ne_sw",  0, -1, 1,  1),
+            "sw" : (0,   1,   0,   0,   "sw", "size_ne_sw", -1,  0, 1,  1),
+            "se" : (1,   1,   0,   0,   "se", "size_nw_se",  0,  0, 1,  1),
+        }
+        self._resize_strips = {}
+        for name, (rx, ry, rw, rh, anchor, cursor, *dirs) in edges.items():
+            # For edges use thickness e; for corners use e×e square
+            w = e if rw == 0 else None
+            h = e if rh == 0 else None
+            strip = tk.Frame(self.root, bg=T["BG"], cursor=cursor)
+            place_kw = dict(relx=rx, rely=ry, anchor=anchor)
+            if w:  place_kw["width"]  = w
+            if h:  place_kw["height"] = h
+            if rw: place_kw["relwidth"]  = rw
+            if rh: place_kw["relheight"] = rh
+            # Corner size
+            if rw == 0 and rh == 0:
+                place_kw["width"]  = e * 3
+                place_kw["height"] = e * 3
+            strip.place(**place_kw)
+            strip.bind("<ButtonPress-1>",
+                       lambda ev, d=dirs: self._edge_start(ev, d))
+            strip.bind("<B1-Motion>",
+                       lambda ev, d=dirs: self._edge_move(ev, d))
+            strip.bind("<ButtonRelease-1>", self._resize_end)
+            self._resize_strips[name] = strip
+            strip.lift()
+
+    def _edge_start(self, e, dirs):
+        if self._maximized:
+            return
         self._resize_active = True
-        self._resize_start   = (e.x_root, e.y_root)
-        self._resize_geom    = (self.root.winfo_width(), self.root.winfo_height(),
-                                self.root.winfo_x(),     self.root.winfo_y())
+        self._resize_dirs   = dirs        # (dx, dy, dw, dh) flags
+        self._resize_start  = (e.x_root, e.y_root)
+        self._resize_geom   = (self.root.winfo_width(),  self.root.winfo_height(),
+                               self.root.winfo_x(),      self.root.winfo_y())
 
-    def _resize_do(self, e):
+    def _edge_move(self, e, dirs):
         if not self._resize_active or self._maximized:
             return
-        dx = e.x_root - self._resize_start[0]
-        dy = e.y_root - self._resize_start[1]
-        w  = max(MIN_W, self._resize_geom[0] + dx)
-        h  = max(MIN_H, self._resize_geom[1] + dy)
-        self.root.geometry(f"{w}x{h}+{self._resize_geom[2]}+{self._resize_geom[3]}")
+        ddx, ddy, ddw, ddh = dirs
+        ox, oy = self._resize_start
+        ow, oh, gx, gy = self._resize_geom
+        mx = e.x_root - ox
+        my = e.y_root - oy
 
-    def _resize_end(self, e):
+        nw = max(MIN_W, ow + ddw * mx)
+        nh = max(MIN_H, oh + ddh * my)
+        nx = gx + ddx * mx  if ddx else gx
+        ny = gy + ddy * my  if ddy else gy
+
+        # Clamp left/top edges so window doesn't grow past min size
+        if ddx and nw == MIN_W:
+            nx = gx + ow - MIN_W
+        if ddy and nh == MIN_H:
+            ny = gy + oh - MIN_H
+
+        self.root.geometry(f"{int(nw)}x{int(nh)}+{int(nx)}+{int(ny)}")
+
+    def _resize_start(self, e):
+        self._edge_start(e, (0, 0, 1, 1))   # SE corner fallback
+
+    def _resize_do(self, e):
+        self._edge_move(e, (0, 0, 1, 1))
+
+    def _resize_end(self, e=None):
         self._resize_active = False
 
     # ── Cards ─────────────────────────────────────────────────────────────────
@@ -897,6 +963,8 @@ class TTSApp:
         self._title_lbl.configure(bg=T["PANEL"], fg=T["TEXT"])
         self._ver_lbl.configure(bg=T["PANEL"], fg=T["TEXT_DIM"])
         self._hdr.configure(bg=T["PANEL"])
+        for strip in self._resize_strips.values():
+            strip.configure(bg=T["BG"])
 
         # PanedWindow sash
         self._pane.configure(bg=T["BG"])
