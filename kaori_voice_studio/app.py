@@ -591,24 +591,24 @@ class TTSApp:
         )
         self._voice_menu.pack(fill="x")
 
-        # Row 2: sample text entry — expands to fill remaining space
+        # Row 2: sample text entry — fixed height with ipady
         sample_row = tk.Frame(inner, bg=T["PANEL"])
-        sample_row.pack(fill="both", expand=True)
+        sample_row.pack(fill="x", pady=(0, 8))
 
         tk.Label(sample_row, text="Sample text", bg=T["PANEL"],
                  fg=T["TEXT_DIM"], font=FONTS["small"]).pack(anchor="w", pady=(0, 4))
 
         entry_bg = tk.Frame(sample_row, bg=T["SURFACE"])
-        entry_bg.pack(fill="both", expand=True)
+        entry_bg.pack(fill="x")
 
         self._preview_entry = tk.Entry(
             entry_bg, textvariable=self.preview_var,
             bg=T["SURFACE"], fg=T["TEXT"],
             insertbackground=T["ACCENT_TK"],
-            relief="flat", font=FONTS["body"], bd=8,
+            relief="flat", font=FONTS["body"], bd=0,
             selectbackground=T["ACCENT"], selectforeground=T["BTN_FG"],
         )
-        self._preview_entry.pack(fill="x", pady=(4, 0))
+        self._preview_entry.pack(fill="x", ipady=8, padx=8, pady=6)
 
     def _build_controls_card(self, parent):
         card, inner = self._make_card(parent, "Controls")
