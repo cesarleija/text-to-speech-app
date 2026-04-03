@@ -473,8 +473,16 @@ class TTSApp:
             import ctypes
             import ctypes.wintypes
 
-            dwmapi = ctypes.windll.dwmapi
-            hwnd   = self.root.winfo_id()
+            user32  = ctypes.windll.user32
+            dwmapi  = ctypes.windll.dwmapi
+
+            # Get the real top-level window handle (not the Tk child hwnd)
+            GA_ROOT = 2
+            child_hwnd = self.root.winfo_id()
+            hwnd = user32.GetAncestor(child_hwnd, GA_ROOT)
+            if not hwnd:
+                hwnd = child_hwnd  # fallback
+            _log(f"Titlebar theme: child_hwnd={child_hwnd} root_hwnd={hwnd} theme={self._theme_name}")
 
             def hex_to_colorref(hex_color):
                 """Convert #RRGGBB to Windows COLORREF (0x00BBGGRR)."""
@@ -482,36 +490,38 @@ class TTSApp:
                 r, g, b = int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
                 return ctypes.c_uint32(r | (g << 8) | (b << 16))
 
-            # DWM attribute constants (Windows 11+)
             DWMWA_USE_IMMERSIVE_DARK_MODE = 20
             DWMWA_CAPTION_COLOR           = 35
             DWMWA_TEXT_COLOR              = 36
             DWMWA_BORDER_COLOR            = 34
 
-            # Dark mode flag based on theme background brightness
-            is_dark = 1 if self._theme_name == "Dark" else 0
-            dark_val = ctypes.c_uint32(is_dark)
-            dwmapi.DwmSetWindowAttribute(
+            # Dark mode flag
+            is_dark = ctypes.c_uint32(1 if self._theme_name == "Dark" else 0)
+            r = dwmapi.DwmSetWindowAttribute(
                 hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE,
-                ctypes.byref(dark_val), ctypes.sizeof(dark_val))
+                ctypes.byref(is_dark), ctypes.sizeof(is_dark))
+            _log(f"  DARK_MODE result: {r}")
 
-            # Caption (title bar) background color
+            # Caption background
             caption_col = hex_to_colorref(T["PANEL"])
-            dwmapi.DwmSetWindowAttribute(
+            r = dwmapi.DwmSetWindowAttribute(
                 hwnd, DWMWA_CAPTION_COLOR,
                 ctypes.byref(caption_col), ctypes.sizeof(caption_col))
+            _log(f"  CAPTION_COLOR ({T['PANEL']}) result: {r}")
 
-            # Title bar text color
+            # Title text color
             text_col = hex_to_colorref(T["TEXT"])
-            dwmapi.DwmSetWindowAttribute(
+            r = dwmapi.DwmSetWindowAttribute(
                 hwnd, DWMWA_TEXT_COLOR,
                 ctypes.byref(text_col), ctypes.sizeof(text_col))
+            _log(f"  TEXT_COLOR ({T['TEXT']}) result: {r}")
 
-            # Window border color (matches accent)
+            # Border/accent color
             border_col = hex_to_colorref(T["ACCENT"])
-            dwmapi.DwmSetWindowAttribute(
+            r = dwmapi.DwmSetWindowAttribute(
                 hwnd, DWMWA_BORDER_COLOR,
                 ctypes.byref(border_col), ctypes.sizeof(border_col))
+            _log(f"  BORDER_COLOR ({T['ACCENT']}) result: {r}")
 
         except Exception as e:
             _log_chrome_error(e)
