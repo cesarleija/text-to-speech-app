@@ -1,0 +1,10 @@
+{
+  "voice_id": "kaori",
+  "display_name": "Kaori",
+  "language": "es",
+  "engine": "openvoice",
+  "embedding_file": "kaori_embedding.pth",
+  "original_audio": "four.wav",
+  "speaker_key": "ES",
+  "device": "cpu"
+}
