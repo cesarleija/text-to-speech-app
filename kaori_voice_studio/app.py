@@ -1019,7 +1019,7 @@ class TTSApp:
             bar, "✨  Fix Punctuation", self._fix_punctuation,
             btn_w=148, btn_h=30,
             bg=T["SURFACE"], fg=T["TEXT_DIM"], hover_bg=T["BORDER"],
-        )
+        )  # powered by DeepSeek API
         self.fix_btn.pack(side="right", padx=(6, 0))
 
         self._text_wave = WaveAnim(bar)
@@ -1360,14 +1360,13 @@ class TTSApp:
             btn.set_active(name == engine)
 
         # Rebuild the voice dropdown with the appropriate voice list
+        global CLONED_VOICES
         if engine == "Kokoro":
-            global CLONED_VOICES
             CLONED_VOICES = _load_cloned_voices()
             kokoro_clones = {k: v for k, v in CLONED_VOICES.items()
                              if v.get("_engine") != "openvoice"}
             voices = list(kokoro_clones.keys()) + list(KOKORO_VOICES.keys())
         elif engine == "OpenVoice":
-            global CLONED_VOICES
             CLONED_VOICES = _load_cloned_voices()
             ov_clones = {k: v for k, v in CLONED_VOICES.items()
                          if v.get("_engine") == "openvoice"}
