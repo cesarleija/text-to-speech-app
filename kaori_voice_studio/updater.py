@@ -158,6 +158,8 @@ def _relaunch():
     except Exception as e:
         _log(f"Relaunch failed: {e}\n{traceback.format_exc()}")
 
+    import time
+    time.sleep(0.5)   # give splash time to close before process exits
     sys.exit(0)
 
 # ── Public API ────────────────────────────────────────────────────────────────

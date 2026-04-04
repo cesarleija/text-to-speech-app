@@ -1199,12 +1199,19 @@ class TTSApp:
                 self.root.after(0, lambda: self._status(
                     "Downloading Kokoro model (~300 MB, first use only)...", T["ACCENT"]))
             self._make_audio(text, self._preview_file)
+            # Log file state before pygame load
+            _log_kokoro(f"Before pygame load: path={self._preview_file}")
+            _log_kokoro(f"  file exists: {Path(self._preview_file).exists()}")
+            _log_kokoro(f"  file size:   {Path(self._preview_file).stat().st_size if Path(self._preview_file).exists() else 'N/A'}")
             pygame.mixer.music.load(self._preview_file)
+            _log_kokoro("pygame.mixer.music.load() succeeded")
             pygame.mixer.music.play()
             self._is_playing = True
             self.root.after(0, lambda: self._status("Playing...", T["SUCCESS"]))
             threading.Thread(target=self._watch, daemon=True).start()
         except Exception as exc:
+            import traceback
+            _log_kokoro(f"_preview_thread ERROR: {exc}\n{traceback.format_exc()}")
             self.root.after(0, lambda: self._status(f"Error: {exc}", T["ERROR"]))
             self.root.after(0, self._reset_play_buttons)
             self.root.after(0, self._wave.stop)
@@ -1362,15 +1369,20 @@ def main():
     from kaori_voice_studio.updater import check_and_update
 
     splash = UpdateSplash()
-
-    # Run the update check in a thread so the splash stays responsive
-    update_done = threading.Event()
+    update_done   = threading.Event()
+    did_update    = threading.Event()   # set when an update was applied
 
     def run_check():
+        def on_updated():
+            did_update.set()
+            update_done.set()
+            # Schedule splash close on main thread — then updater calls sys.exit(0)
+            splash._root.after(0, splash.close)
+
         check_and_update(
             on_checking      = lambda:   splash.set_status("Checking for updates..."),
             on_update_found  = lambda v: splash.set_status(f"Updating to v{v}..."),
-            on_updated       = lambda:   splash._root.after(0, splash.close),
+            on_updated       = on_updated,
             on_no_update     = lambda:   splash.set_status("Up to date!"),
             on_error         = lambda m: splash.set_status(m),
         )
@@ -1379,16 +1391,25 @@ def main():
     t = threading.Thread(target=run_check, daemon=True)
     t.start()
 
-    # Poll until the check finishes (keeps Tk event loop alive for the splash)
     def wait_for_check():
         if update_done.is_set():
-            splash.close()
+            if did_update.is_set():
+                # Updater will call sys.exit(0) — just keep splash alive
+                # a moment so the close animation can complete
+                return
+            try:
+                splash.close()
+            except Exception:
+                pass
             root = tk.Tk()
             root.geometry("800x660")
             TTSApp(root)
             root.mainloop()
         else:
-            splash._root.after(100, wait_for_check)
+            try:
+                splash._root.after(100, wait_for_check)
+            except Exception:
+                pass
 
     splash._root.after(100, wait_for_check)
     splash._root.mainloop()
