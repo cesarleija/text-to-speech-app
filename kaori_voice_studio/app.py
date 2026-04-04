@@ -250,23 +250,19 @@ def _kokoro_generate_cloned(text, output_path, config, speed=1.0):
     embedding = np.load(config["_embedding_path"]).astype(np.float32)
     lang_code  = config.get("inference_params", {}).get("language", "en-us")
 
+    # kokoro-onnx expects shape (1, 512) — add batch dimension if flat
+    if embedding.ndim == 1:
+        embedding = embedding[np.newaxis, :]
+
     _log_kokoro(f"Cloned voice generate: embedding shape={embedding.shape} lang={lang_code}")
 
     kokoro = _get_kokoro()
-    # kokoro-onnx accepts a numpy array directly as the voice parameter
     samples, sample_rate = kokoro.create(
         text, voice=embedding, speed=float(speed), lang=lang_code
     )
     sf.write(str(output_path), samples, int(sample_rate))
     _log_kokoro(f"Cloned voice write successful: {output_path}")
     return str(output_path)
-    """Check if kokoro-onnx and soundfile packages are importable."""
-    try:
-        import kokoro_onnx  # noqa: F401
-        import soundfile    # noqa: F401
-        return True
-    except ImportError:
-        return False
 
 
 # Lazily loaded Kokoro instance — downloaded on first use
