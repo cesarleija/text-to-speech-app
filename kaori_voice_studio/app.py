@@ -102,6 +102,7 @@ PREVIEW_SENTENCES = {
 
 MIN_W, MIN_H   = 680, 560
 RIGHT_PANEL_W  = 230
+CONFIG_FILE    = Path.home() / ".kaori_voice_studio" / "config.json"
 
 # ── Kokoro voices ─────────────────────────────────────────────────────────────
 # Format:  "Display label" : "kokoro_voice_id"
@@ -819,6 +820,13 @@ class TTSApp:
         )
         self.text_play_btn.pack(side="right", padx=(6, 0))
 
+        self.fix_btn = FlatButton(
+            bar, "✨  Fix Punctuation", self._fix_punctuation,
+            btn_w=148, btn_h=30,
+            bg=T["SURFACE"], fg=T["TEXT_DIM"], hover_bg=T["BORDER"],
+        )
+        self.fix_btn.pack(side="right", padx=(6, 0))
+
         self._text_wave = WaveAnim(bar)
         self._text_wave.pack(side="right", padx=(0, 8))
 
@@ -1034,6 +1042,9 @@ class TTSApp:
             bg=T["SURFACE"], fg=T["TEXT"],
             insertbackground=T["ACCENT_TK"],
             selectbackground=T["ACCENT"], selectforeground=T["BTN_FG"],
+        )
+        self.fix_btn.retheme(
+            bg=T["SURFACE"], fg=T["TEXT_DIM"], hover_bg=T["BORDER"]
         )
 
         # Voice menu
@@ -1327,6 +1338,125 @@ class TTSApp:
             await comm.save(path)
 
         asyncio.run(_run())
+
+    # ── DeepSeek punctuation fix ───────────────────────────────────────────────
+
+    def _load_api_key(self):
+        """Load DeepSeek API key from config file."""
+        try:
+            import json
+            if CONFIG_FILE.exists():
+                data = json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
+                return data.get("deepseek_api_key", "")
+        except Exception:
+            pass
+        return ""
+
+    def _save_api_key(self, key: str):
+        """Save DeepSeek API key to config file."""
+        try:
+            import json
+            CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
+            data = {}
+            if CONFIG_FILE.exists():
+                data = json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
+            data["deepseek_api_key"] = key
+            CONFIG_FILE.write_text(json.dumps(data, indent=2), encoding="utf-8")
+        except Exception:
+            pass
+
+    def _ask_api_key(self):
+        """Prompt the user to enter their DeepSeek API key."""
+        import tkinter.simpledialog as sd
+        key = sd.askstring(
+            "DeepSeek API Key",
+            "Enter your DeepSeek API key:\n(It will be saved locally for future use)",
+            show="*",
+            parent=self.root,
+        )
+        if key and key.strip():
+            key = key.strip()
+            self._save_api_key(key)
+            return key
+        return None
+
+    def _fix_punctuation(self):
+        text = self.text_input.get("1.0", "end").strip()
+        if not text:
+            self._status("No text to fix", T["ERROR"])
+            return
+
+        api_key = self._load_api_key()
+        if not api_key:
+            api_key = self._ask_api_key()
+            if not api_key:
+                self._status("API key required", T["ERROR"])
+                return
+
+        self.fix_btn.set_state("disabled")
+        self._status("Fixing punctuation...", T["ACCENT"])
+        threading.Thread(
+            target=self._fix_punctuation_thread,
+            args=(text, api_key),
+            daemon=True,
+        ).start()
+
+    def _fix_punctuation_thread(self, text: str, api_key: str):
+        try:
+            import urllib.request
+            import json
+
+            prompt = (
+                "You are a punctuation editor. "
+                "Fix the punctuation of the following text without changing any words, "
+                "sentence structure, or meaning. "
+                "Return ONLY the corrected text with no explanation, no quotes, "
+                "no preamble — just the corrected text itself.\n\n"
+                f"{text}"
+            )
+
+            payload = json.dumps({
+                "model": "deepseek-chat",
+                "messages": [{"role": "user", "content": prompt}],
+                "temperature": 0.0,
+                "max_tokens": 4096,
+            }).encode("utf-8")
+
+            req = urllib.request.Request(
+                "https://api.deepseek.com/v1/chat/completions",
+                data=payload,
+                headers={
+                    "Content-Type": "application/json",
+                    "Authorization": f"Bearer {api_key}",
+                },
+                method="POST",
+            )
+
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                result = json.loads(resp.read().decode("utf-8"))
+
+            fixed = result["choices"][0]["message"]["content"].strip()
+
+            def apply():
+                self.text_input.delete("1.0", "end")
+                self.text_input.insert("1.0", fixed)
+                self._update_stats()
+                self.fix_btn.set_state("normal")
+                self._status("Punctuation fixed ✓", T["SUCCESS"])
+
+            self.root.after(0, apply)
+
+        except Exception as exc:
+            def show_err():
+                self.fix_btn.set_state("normal")
+                msg = str(exc)
+                # Detect bad API key specifically
+                if "401" in msg or "Unauthorized" in msg.lower():
+                    self._save_api_key("")   # clear invalid key
+                    self._status("Invalid API key — cleared, try again", T["ERROR"])
+                else:
+                    self._status(f"Fix failed: {msg}", T["ERROR"])
+            self.root.after(0, show_err)
 
     # ── Lifecycle ─────────────────────────────────────────────────────────────
 
