@@ -169,6 +169,17 @@ def _pitch_str(hz):
     return f"+{val}Hz" if val >= 0 else f"{val}Hz"
 
 
+def _log_kokoro(msg: str):
+    """Append a timestamped line to the kokoro debug log."""
+    try:
+        from datetime import datetime
+        log = Path.home() / "kaori_kokoro.log"
+        with open(log, "a", encoding="utf-8") as f:
+            f.write(f"[{datetime.now().strftime('%H:%M:%S')}] {msg}\n")
+    except Exception:
+        pass
+
+
 def _kokoro_available():
     """Check if kokoro-onnx and soundfile packages are importable."""
     try:
@@ -200,27 +211,48 @@ def _get_kokoro():
     voices_path = cache_dir / "voices-v1.0.bin"
 
     if not model_path.exists():
+        _log_kokoro(f"Downloading model to {model_path}")
         urllib.request.urlretrieve(_KOKORO_MODEL_URL, model_path)
+        _log_kokoro("Model download complete")
     if not voices_path.exists():
+        _log_kokoro(f"Downloading voices to {voices_path}")
         urllib.request.urlretrieve(_KOKORO_VOICES_URL, voices_path)
+        _log_kokoro("Voices download complete")
 
+    _log_kokoro(f"Loading Kokoro from {model_path}")
     _kokoro_instance = Kokoro(str(model_path), str(voices_path))
+    _log_kokoro(f"Kokoro loaded: {type(_kokoro_instance)}")
     return _kokoro_instance
 
 
 def _kokoro_generate(text, output_path, voice_id, lang_code, speed=1.0):
     """Generate audio using Kokoro ONNX and save as WAV."""
-    import soundfile as sf
-    import numpy as np
+    try:
+        import soundfile as sf
+        import numpy as np
 
-    kokoro = _get_kokoro()
-    samples, sample_rate = kokoro.create(
-        text, voice=voice_id, speed=float(speed), lang=lang_code
-    )
+        _log_kokoro(f"_kokoro_generate called: voice={voice_id} lang={lang_code} speed={speed} path={output_path}")
+        kokoro = _get_kokoro()
+        _log_kokoro(f"Kokoro instance obtained: {type(kokoro)}")
 
-    # soundfile needs a path string, not a file object
-    sf.write(str(output_path), np.array(samples), int(sample_rate))
-    return str(output_path)
+        result = kokoro.create(
+            text, voice=voice_id, speed=float(speed), lang=lang_code
+        )
+        _log_kokoro(f"kokoro.create() returned type: {type(result)}, len: {len(result) if hasattr(result, '__len__') else 'n/a'}")
+
+        samples, sample_rate = result
+        _log_kokoro(f"samples type={type(samples)}, shape={getattr(samples, 'shape', 'no shape')}, sample_rate={sample_rate}")
+
+        output_path_str = str(output_path)
+        _log_kokoro(f"Writing to: {output_path_str}")
+        sf.write(output_path_str, np.array(samples), int(sample_rate))
+        _log_kokoro(f"Write successful")
+        return output_path_str
+
+    except Exception as e:
+        import traceback
+        _log_kokoro(f"ERROR in _kokoro_generate: {e}\n{traceback.format_exc()}")
+        raise
 
 
 # ─────────────────────────────────────────────────────────────────────────────
