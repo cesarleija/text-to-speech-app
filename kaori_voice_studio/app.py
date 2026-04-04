@@ -58,6 +58,7 @@ FONTS = {
 }
 
 VOICES = {
+    "🧒  Ana (Child · US)"            : "en-US-AnaNeural",
     "🇺🇸  Guy (Male · US)"        : "en-US-GuyNeural",
     "🇺🇸  Jenny (Female · US)"    : "en-US-JennyNeural",
     "🇺🇸  Aria (Female · US)"     : "en-US-AriaNeural",
