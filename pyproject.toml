@@ -43,4 +43,4 @@ where = ["."]
 include = ["kaori_voice_studio*"]
 
 [tool.setuptools.package-data]
-kaori_voice_studio = ["*.ico"]
+kaori_voice_studio = ["*.ico", "cloned_voices/*"]

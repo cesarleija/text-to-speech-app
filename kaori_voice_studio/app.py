@@ -71,10 +71,26 @@ VOICES = {
     "🇮🇳  Neerja (Female · IN)"   : "en-IN-NeerjaNeural",
     "🇨🇦  Liam (Male · CA)"       : "en-CA-LiamNeural",
     "🇨🇦  Clara (Female · CA)"    : "en-CA-ClaraNeural",
+    # Spanish MX — full list + child-like picks
+    "🧒  Nuria (Niña · MX)"          : "es-MX-NuriaNeural",
+    "🧒  Candela (Niña · MX)"        : "es-MX-CandelaNeural",
     "🇲🇽  Dalia (Female · MX)"    : "es-MX-DaliaNeural",
     "🇲🇽  Jorge (Male · MX)"      : "es-MX-JorgeNeural",
+    "🇲🇽  Beatriz (Female · MX)"  : "es-MX-BeatrizNeural",
+    "🇲🇽  Carlota (Female · MX)"  : "es-MX-CarlotaNeural",
+    "🇲🇽  Larissa (Female · MX)"  : "es-MX-LarissaNeural",
+    "🇲🇽  Marina (Female · MX)"   : "es-MX-MarinaNeural",
+    "🇲🇽  Renata (Female · MX)"   : "es-MX-RenataNeural",
+    "🇲🇽  Cecilio (Male · MX)"    : "es-MX-CecilioNeural",
+    "🇲🇽  Gerardo (Male · MX)"    : "es-MX-GerardoNeural",
+    "🇲🇽  Liberto (Male · MX)"    : "es-MX-LibertoNeural",
+    "🇲🇽  Luciano (Male · MX)"    : "es-MX-LucianoNeural",
+    "🇲🇽  Pelayo (Male · MX)"     : "es-MX-PelayoNeural",
+    "🇲🇽  Yago (Male · MX)"       : "es-MX-YagoNeural",
+    # Spanish ES
     "🇪🇸  Alvaro (Male · ES)"     : "es-ES-AlvaroNeural",
     "🇪🇸  Elvira (Female · ES)"   : "es-ES-ElviraNeural",
+    # Spanish AR
     "🇦🇷  Elena (Female · AR)"    : "es-AR-ElenaNeural",
     "🇦🇷  Tomas (Male · AR)"      : "es-AR-TomasNeural",
     "🇫🇷  Denise (Female · FR)"   : "fr-FR-DeniseNeural",
@@ -186,7 +202,64 @@ def _log_kokoro(msg: str):
         pass
 
 
-def _kokoro_available():
+def _cloned_voices_dir():
+    """Return the cloned_voices directory bundled with the package."""
+    try:
+        import importlib.resources as ir
+        ref = ir.files("kaori_voice_studio") / "cloned_voices"
+        return Path(str(ref))
+    except Exception:
+        return Path(__file__).parent / "cloned_voices"
+
+
+def _load_cloned_voices():
+    """
+    Scan the cloned_voices folder for *_config.json files and return
+    a dict of  { display_label: config_dict }  for each valid clone.
+    """
+    clones = {}
+    folder = _cloned_voices_dir()
+    if not folder.exists():
+        return clones
+    for cfg_file in sorted(folder.glob("*_config.json")):
+        try:
+            import json
+            cfg = json.loads(cfg_file.read_text(encoding="utf-8"))
+            emb_file = folder / cfg["embedding_file"]
+            if not emb_file.exists():
+                continue
+            speaker_id = cfg.get("speaker_id", cfg_file.stem)
+            label = f"⭐  {speaker_id.replace('_', ' ').title()} (Cloned)"
+            cfg["_embedding_path"] = str(emb_file)
+            cfg["_label"] = label
+            clones[label] = cfg
+        except Exception:
+            pass
+    return clones
+
+
+# Populated at import time — updated when Kokoro engine is selected
+CLONED_VOICES: dict = {}
+
+
+def _kokoro_generate_cloned(text, output_path, config, speed=1.0):
+    """Generate audio using a cloned voice embedding with the standard Kokoro model."""
+    import numpy as np
+    import soundfile as sf
+
+    embedding = np.load(config["_embedding_path"]).astype(np.float32)
+    lang_code  = config.get("inference_params", {}).get("language", "en-us")
+
+    _log_kokoro(f"Cloned voice generate: embedding shape={embedding.shape} lang={lang_code}")
+
+    kokoro = _get_kokoro()
+    # kokoro-onnx accepts a numpy array directly as the voice parameter
+    samples, sample_rate = kokoro.create(
+        text, voice=embedding, speed=float(speed), lang=lang_code
+    )
+    sf.write(str(output_path), samples, int(sample_rate))
+    _log_kokoro(f"Cloned voice write successful: {output_path}")
+    return str(output_path)
     """Check if kokoro-onnx and soundfile packages are importable."""
     try:
         import kokoro_onnx  # noqa: F401
@@ -1137,7 +1210,14 @@ class TTSApp:
             btn.set_active(name == engine)
 
         # Rebuild the voice dropdown with the appropriate voice list
-        voices = list(KOKORO_VOICES.keys()) if engine == "Kokoro" else list(VOICES.keys())
+        if engine == "Kokoro":
+            # Load cloned voices and put them first
+            global CLONED_VOICES
+            CLONED_VOICES = _load_cloned_voices()
+            voices = list(CLONED_VOICES.keys()) + list(KOKORO_VOICES.keys())
+        else:
+            voices = list(VOICES.keys())
+
         self.voice_var.set(voices[0])
         menu = self._voice_menu["menu"]
         menu.delete(0, "end")
@@ -1321,6 +1401,14 @@ class TTSApp:
 
         if engine == "Kokoro":
             voice_label = self.voice_var.get()
+
+            # Check if this is a cloned voice
+            if voice_label in CLONED_VOICES:
+                config = CLONED_VOICES[voice_label]
+                _kokoro_generate_cloned(text, path, config, self.speed_var.get())
+                return
+
+            # Standard Kokoro voice
             voice_id, lang_code = KOKORO_VOICES[voice_label]
             speed = self.speed_var.get()
             _kokoro_generate(text, path, voice_id, lang_code, speed)

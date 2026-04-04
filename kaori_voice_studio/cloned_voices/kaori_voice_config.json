@@ -1,0 +1,13 @@
+{
+  "model_type": "kokoro_cloned",
+  "model_format": "onnx",
+  "sample_rate": 24000,
+  "speaker_id": "kaori_voice",
+  "embedding_file": "kaori_voice_embedding.npy",
+  "original_audio": "four.wav",
+  "opset_version": 18,
+  "inference_params": {
+    "speed": 1.0,
+    "language": "en-us"
+  }
+}

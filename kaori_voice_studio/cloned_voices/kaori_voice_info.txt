@@ -1,0 +1,4 @@
+Voice clone created from: four.wav
+Embedding dimension: 512
+Sample rate: 24000
+ONNX opset: 18
