@@ -131,35 +131,43 @@ def _scripts_dir():
 def _relaunch():
     """
     Relaunch the app after update and exit the current process.
-    Uses 'pythonw.exe -m kaori_voice_studio.app' so no console window appears.
-    On Windows we use the START command to ensure the new process gets a
-    proper window station and desktop — DETACHED_PROCESS suppresses the GUI.
+    Uses 'cmd /c start' on Windows which properly assigns a window station
+    and desktop to the new process — the only reliable way to spawn a
+    visible GUI window from a pythonw.exe (windowless) parent process.
     """
-    # Prefer pythonw.exe (no console) if available
+    # Always use python.exe (not pythonw.exe) as the target — pythonw.exe
+    # without a proper window station silently swallows the GUI window.
+    # The 'start' command in cmd suppresses the console window for us.
     python = Path(sys.executable)
-    pythonw = python.parent / "pythonw.exe"
-    launcher = str(pythonw) if pythonw.exists() else str(python)
+    # Resolve to python.exe regardless of whether we were launched via pythonw.exe
+    python_exe = python.parent / "python.exe"
+    if not python_exe.exists():
+        python_exe = python
 
-    cmd = [launcher, "-m", "kaori_voice_studio.app"]
-    _log(f"Relaunching with: {' '.join(cmd)}")
+    module_cmd = f'"{python_exe}" -m kaori_voice_studio.app'
+    _log(f"Relaunching with: cmd /c start {module_cmd}")
 
     try:
         if sys.platform == "win32":
-            # Use STARTUPINFO to suppress any flash, but keep the window station
-            # Do NOT use DETACHED_PROCESS — it prevents GUI windows from appearing
-            import ctypes
-            si = subprocess.STARTUPINFO()
-            si.dwFlags = subprocess.STARTF_USESHOWWINDOW
-            si.wShowWindow = 1  # SW_SHOWNORMAL
-            subprocess.Popen(cmd, startupinfo=si, close_fds=True)
+            # 'start' launches a new process with a fresh window station + desktop
+            # The empty string "" is the window title (required by start syntax)
+            subprocess.Popen(
+                ['cmd', '/c', 'start', '', str(python_exe),
+                 '-m', 'kaori_voice_studio.app'],
+                close_fds=True,
+                creationflags=subprocess.CREATE_NO_WINDOW,
+            )
         else:
-            subprocess.Popen(cmd, close_fds=True)
-        _log("Relaunch spawned — exiting current process.")
+            subprocess.Popen(
+                [str(python_exe), '-m', 'kaori_voice_studio.app'],
+                close_fds=True,
+            )
+        _log("Relaunch spawned via cmd start — exiting current process.")
     except Exception as e:
         _log(f"Relaunch failed: {e}\n{traceback.format_exc()}")
 
     import time
-    time.sleep(0.5)   # give splash time to close before process exits
+    time.sleep(1.0)   # give the new process time to start before we exit
     sys.exit(0)
 
 # ── Public API ────────────────────────────────────────────────────────────────
