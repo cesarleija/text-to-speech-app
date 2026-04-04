@@ -250,9 +250,13 @@ def _kokoro_generate_cloned(text, output_path, config, speed=1.0):
     embedding = np.load(config["_embedding_path"]).astype(np.float32)
     lang_code  = config.get("inference_params", {}).get("language", "en-us")
 
-    # kokoro-onnx expects shape (1, 512) — add batch dimension if flat
+    # kokoro-onnx indexes the embedding by token position: voice[len(tokens)]
+    # Standard voice embeddings have shape (510, 512).
+    # If embedding is (512,) or (1, 512), tile it to (510, 512).
     if embedding.ndim == 1:
-        embedding = embedding[np.newaxis, :]
+        embedding = np.tile(embedding[np.newaxis, :], (510, 1))
+    elif embedding.shape[0] == 1:
+        embedding = np.tile(embedding, (510, 1))
 
     _log_kokoro(f"Cloned voice generate: embedding shape={embedding.shape} lang={lang_code}")
 
