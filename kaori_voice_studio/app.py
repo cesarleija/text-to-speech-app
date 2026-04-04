@@ -216,6 +216,7 @@ def _load_cloned_voices():
     """
     Scan the cloned_voices folder for *_config.json files and return
     a dict of  { display_label: config_dict }  for each valid clone.
+    Supports both kokoro_cloned and openvoice engine types.
     """
     clones = {}
     folder = _cloned_voices_dir()
@@ -223,15 +224,25 @@ def _load_cloned_voices():
         return clones
     for cfg_file in sorted(folder.glob("*_config.json")):
         try:
-            import json
-            cfg = json.loads(cfg_file.read_text(encoding="utf-8"))
-            emb_file = folder / cfg["embedding_file"]
+            import json as _json
+            cfg = _json.loads(cfg_file.read_text(encoding="utf-8"))
+            engine = cfg.get("engine", "kokoro_cloned")
+
+            # Find the embedding file
+            emb_name = cfg.get("embedding_file", "")
+            emb_file = folder / emb_name
             if not emb_file.exists():
                 continue
-            speaker_id = cfg.get("speaker_id", cfg_file.stem)
-            label = f"⭐  {speaker_id.replace('_', ' ').title()} (Cloned)"
+
+            # Build display label with engine badge
+            speaker_id = cfg.get("speaker_id") or cfg.get("voice_id", cfg_file.stem)
+            display    = cfg.get("display_name", speaker_id.replace("_", " ").title())
+            engine_tag = "OV" if engine == "openvoice" else "K"
+            label = f"⭐  {display} [{engine_tag}]"
+
             cfg["_embedding_path"] = str(emb_file)
-            cfg["_label"] = label
+            cfg["_engine"]         = engine
+            cfg["_label"]          = label
             clones[label] = cfg
         except Exception:
             pass
@@ -273,6 +284,112 @@ def _kokoro_generate_cloned(text, output_path, config, speed=1.0):
     _log_kokoro(f"Cloned voice write successful: {output_path}")
     return str(output_path)
 
+
+
+
+# ── OpenVoice engine ──────────────────────────────────────────────────────────
+
+def _openvoice_available():
+    """Check if OpenVoice and MeloTTS are importable."""
+    try:
+        from openvoice.api import ToneColorConverter  # noqa: F401
+        from melo.api import TTS                      # noqa: F401
+        return True
+    except ImportError:
+        return False
+
+
+_openvoice_converter  = None
+_openvoice_tts_cache  = {}
+_OV_CHECKPOINTS = Path.home() / ".kaori_voice_studio" / "openvoice" / "checkpoints_v2"
+
+_OV_SPEAKER_IDS = {
+    "en-newest": 0, "en-us": 0, "en-br": 1, "en-india": 2,
+    "en-au": 3, "en-default": 4, "es": 0, "fr": 0,
+    "zh": 0, "jp": 0, "kr": 0,
+}
+
+_OV_LANG_MAP = {
+    "en": ("EN_NEWEST", "en-newest"),
+    "es": ("ES",        "es"),
+    "fr": ("FR",        "fr"),
+    "zh": ("ZH",        "zh"),
+    "ja": ("JP",        "jp"),
+    "ko": ("KR",        "kr"),
+}
+
+
+def _get_openvoice_converter(device="cpu"):
+    global _openvoice_converter
+    if _openvoice_converter is not None:
+        return _openvoice_converter
+    from openvoice.api import ToneColorConverter
+    cfg  = str(_OV_CHECKPOINTS / "converter" / "config.json")
+    ckpt = str(_OV_CHECKPOINTS / "converter" / "checkpoint.pth")
+    _openvoice_converter = ToneColorConverter(cfg, device=device)
+    _openvoice_converter.load_ckpt(ckpt)
+    return _openvoice_converter
+
+
+def _get_openvoice_tts(lang_code, device="cpu"):
+    if lang_code in _openvoice_tts_cache:
+        return _openvoice_tts_cache[lang_code]
+    from melo.api import TTS
+    model = TTS(language=lang_code.upper(), device=device)
+    _openvoice_tts_cache[lang_code] = model
+    return model
+
+
+def _openvoice_generate(text, output_path, config, speed=1.0):
+    """Generate speech using OpenVoice V2 with a cloned voice embedding."""
+    import torch
+    import tempfile as _tempfile
+
+    device   = config.get("device", "cpu")
+    language = config.get("language", "en")
+    emb_path = config["_embedding_path"]
+
+    lang_upper, ses_key = _OV_LANG_MAP.get(language, ("EN_NEWEST", "en-newest"))
+    speaker_id = _OV_SPEAKER_IDS.get(ses_key, 0)
+
+    _log_kokoro(f"OpenVoice generate: lang={language} speaker_id={speaker_id} device={device}")
+
+    # Load cloned tone color embedding
+    target_se = torch.load(str(emb_path), map_location=device)
+
+    # Load base speaker embedding
+    ses_dir = _OV_CHECKPOINTS / "base_speakers" / "ses"
+    src_se_path = ses_dir / f"{ses_key}.pth"
+    if not src_se_path.exists():
+        available = list(ses_dir.glob("*.pth")) if ses_dir.exists() else []
+        raise FileNotFoundError(
+            f"Base speaker not found: {src_se_path}\nAvailable: {available}\n"
+            f"Download checkpoints with: python clone_voice.py --input your.wav"
+        )
+    src_se = torch.load(str(src_se_path), map_location=device)
+
+    # Generate base TTS with MeloTTS
+    tts_model = _get_openvoice_tts(lang_upper, device)
+    with _tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
+        tmp_path = tmp.name
+    tts_model.tts_to_file(text, speaker_id, tmp_path, speed=float(speed))
+
+    # Apply tone color conversion
+    converter = _get_openvoice_converter(device)
+    with torch.no_grad():
+        converter.convert(
+            audio_src_path=tmp_path,
+            src_se=src_se,
+            tgt_se=target_se,
+            output_path=str(output_path),
+            message="@KaoriVoiceStudio",
+        )
+    Path(tmp_path).unlink(missing_ok=True)
+    _log_kokoro(f"OpenVoice write successful: {output_path}")
+    return str(output_path)
+
+
+# ── Kokoro engine ─────────────────────────────────────────────────────────────
 
 # Lazily loaded Kokoro instance — downloaded on first use
 _kokoro_instance = None
@@ -770,7 +887,7 @@ class TTSApp:
         tk.Label(eng_frame, text="Engine:", bg=T["PANEL"],
                  fg=T["TEXT_DIM"], font=FONTS["small"]).pack(side="left", padx=(0, 8))
         self._engine_btns = {}
-        for eng in ("Edge", "Kokoro"):
+        for eng in ("Edge", "Kokoro", "OpenVoice"):
             btn = ThemeButton(
                 eng_frame, eng,
                 command=lambda e=eng: self._switch_engine(e),
@@ -1198,6 +1315,25 @@ class TTSApp:
 
     def _switch_engine(self, engine: str):
         """Switch between Edge TTS and Kokoro engine."""
+        if engine == "OpenVoice":
+            missing = []
+            try:
+                from openvoice.api import ToneColorConverter  # noqa: F401
+            except ImportError:
+                missing.append("openvoice (git+https://github.com/myshell-ai/OpenVoice.git)")
+            try:
+                from melo.api import TTS  # noqa: F401
+            except ImportError:
+                missing.append("melotts (git+https://github.com/myshell-ai/MeloTTS.git)")
+            if missing:
+                messagebox.showwarning(
+                    "OpenVoice not installed",
+                    "The following packages are required:\n\n"
+                    + "\n".join(f"  • {m}" for m in missing)
+                    + "\n\nInstall with pip, then restart the app."
+                )
+                return
+
         if engine == "Kokoro":
             missing = []
             try:
@@ -1208,7 +1344,6 @@ class TTSApp:
                 import soundfile  # noqa: F401
             except ImportError:
                 missing.append("soundfile")
-
             if missing:
                 messagebox.showwarning(
                     "Kokoro not installed",
@@ -1216,9 +1351,7 @@ class TTSApp:
                     f"  {', '.join(missing)}\n\n"
                     f"Install with:\n"
                     f"  pip install {' '.join(missing)}\n\n"
-                    f"Then restart Kaori Voice Studio.\n\n"
-                    f"The model files (~300 MB) will be downloaded\n"
-                    f"automatically on first use."
+                    f"Then restart Kaori Voice Studio."
                 )
                 return
 
@@ -1228,10 +1361,26 @@ class TTSApp:
 
         # Rebuild the voice dropdown with the appropriate voice list
         if engine == "Kokoro":
-            # Load cloned voices and put them first
             global CLONED_VOICES
             CLONED_VOICES = _load_cloned_voices()
-            voices = list(CLONED_VOICES.keys()) + list(KOKORO_VOICES.keys())
+            kokoro_clones = {k: v for k, v in CLONED_VOICES.items()
+                             if v.get("_engine") != "openvoice"}
+            voices = list(kokoro_clones.keys()) + list(KOKORO_VOICES.keys())
+        elif engine == "OpenVoice":
+            global CLONED_VOICES
+            CLONED_VOICES = _load_cloned_voices()
+            ov_clones = {k: v for k, v in CLONED_VOICES.items()
+                         if v.get("_engine") == "openvoice"}
+            voices = list(ov_clones.keys())
+            if not voices:
+                messagebox.showinfo(
+                    "No cloned voices",
+                    "No OpenVoice cloned voices found.\n\n"
+                    "Run the cloning script first:\n"
+                    "  python clone_voice.py --input your_recording.wav --lang es\n\n"
+                    "Then restart Kaori Voice Studio."
+                )
+                return
         else:
             voices = list(VOICES.keys())
 
@@ -1306,7 +1455,7 @@ class TTSApp:
 
     def _preview_thread(self, text):
         try:
-            suffix = ".wav" if self.engine_var.get() == "Kokoro" else ".mp3"
+            suffix = ".wav" if self.engine_var.get() in ("Kokoro", "OpenVoice") else ".mp3"
             tmp = tempfile.NamedTemporaryFile(delete=False, suffix=suffix)
             tmp.close()
             # Resolve to full long path — Windows may return 8.3 short paths
@@ -1416,19 +1565,22 @@ class TTSApp:
     def _make_audio(self, text, path):
         engine = self.engine_var.get()
 
+        if engine == "OpenVoice":
+            voice_label = self.voice_var.get()
+            config = CLONED_VOICES[voice_label]
+            _openvoice_generate(text, path, config, self.speed_var.get())
+            return
+
         if engine == "Kokoro":
             voice_label = self.voice_var.get()
-
-            # Check if this is a cloned voice
+            # Kokoro cloned voice
             if voice_label in CLONED_VOICES:
                 config = CLONED_VOICES[voice_label]
                 _kokoro_generate_cloned(text, path, config, self.speed_var.get())
                 return
-
             # Standard Kokoro voice
             voice_id, lang_code = KOKORO_VOICES[voice_label]
-            speed = self.speed_var.get()
-            _kokoro_generate(text, path, voice_id, lang_code, speed)
+            _kokoro_generate(text, path, voice_id, lang_code, self.speed_var.get())
             return
 
         # Edge TTS
