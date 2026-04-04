@@ -250,13 +250,18 @@ def _kokoro_generate_cloned(text, output_path, config, speed=1.0):
     embedding = np.load(config["_embedding_path"]).astype(np.float32)
     lang_code  = config.get("inference_params", {}).get("language", "en-us")
 
-    # kokoro-onnx indexes the embedding by token position: voice[len(tokens)]
-    # Standard voice embeddings have shape (510, 512).
-    # If embedding is (512,) or (1, 512), tile it to (510, 512).
+    # kokoro-onnx does voice[len(tokens)] internally, then passes that slice
+    # as the 'style' input to ONNX. The ONNX model expects style rank=2 (1, 512).
+    # So voice must have shape (N, 1, 512) so that voice[i] = (1, 512).
+    # Standard voices-v1.0.bin has shape (N, 1, 256) — our cloned embedding
+    # is (512,) so we reshape to (1, 512) then tile to (510, 1, 512).
     if embedding.ndim == 1:
-        embedding = np.tile(embedding[np.newaxis, :], (510, 1))
-    elif embedding.shape[0] == 1:
-        embedding = np.tile(embedding, (510, 1))
+        # (512,) -> (1, 1, 512) -> tile to (510, 1, 512)
+        row = embedding[np.newaxis, np.newaxis, :]   # (1, 1, 512)
+        embedding = np.tile(row, (510, 1, 1))         # (510, 1, 512)
+    elif embedding.ndim == 2 and embedding.shape[0] == 1:
+        # (1, 512) -> (510, 1, 512)
+        embedding = np.tile(embedding[np.newaxis, :], (510, 1, 1))
 
     _log_kokoro(f"Cloned voice generate: embedding shape={embedding.shape} lang={lang_code}")
 
