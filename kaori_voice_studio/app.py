@@ -1194,16 +1194,17 @@ class TTSApp:
             tmp.close()
             # Resolve to full long path — Windows may return 8.3 short paths
             # (e.g. JULIOL~1) for usernames with spaces, which pygame rejects
-            self._preview_file = str(Path(tmp.name).resolve())
+            preview_file = str(Path(tmp.name).resolve())
+            self._preview_file = preview_file   # keep ref for cleanup only
             if self.engine_var.get() == "Kokoro" and _kokoro_instance is None:
                 self.root.after(0, lambda: self._status(
                     "Downloading Kokoro model (~300 MB, first use only)...", T["ACCENT"]))
-            self._make_audio(text, self._preview_file)
-            # Log file state before pygame load
-            _log_kokoro(f"Before pygame load: path={self._preview_file}")
-            _log_kokoro(f"  file exists: {Path(self._preview_file).exists()}")
-            _log_kokoro(f"  file size:   {Path(self._preview_file).stat().st_size if Path(self._preview_file).exists() else 'N/A'}")
-            pygame.mixer.music.load(self._preview_file)
+            self._make_audio(text, preview_file)
+            # Use local var — self._preview_file may be mutated by another thread
+            _log_kokoro(f"Before pygame load: path={preview_file}")
+            _log_kokoro(f"  file exists: {Path(preview_file).exists()}")
+            _log_kokoro(f"  file size:   {Path(preview_file).stat().st_size if Path(preview_file).exists() else 'N/A'}")
+            pygame.mixer.music.load(preview_file)
             _log_kokoro("pygame.mixer.music.load() succeeded")
             pygame.mixer.music.play()
             self._is_playing = True
@@ -1250,10 +1251,14 @@ class TTSApp:
         self.root.after(200, self._cleanup)
 
     def _cleanup(self):
-        if self._preview_file and os.path.exists(self._preview_file):
+        # Snapshot the path — another thread may overwrite self._preview_file
+        path = self._preview_file
+        if path and os.path.exists(path):
             try:
-                os.unlink(self._preview_file)
-                self._preview_file = None
+                os.unlink(path)
+                # Only clear if it hasn't been replaced by a new preview
+                if self._preview_file == path:
+                    self._preview_file = None
             except Exception:
                 self.root.after(1000, self._cleanup)
 
