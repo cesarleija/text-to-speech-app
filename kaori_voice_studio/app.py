@@ -211,15 +211,16 @@ def _get_kokoro():
 def _kokoro_generate(text, output_path, voice_id, lang_code, speed=1.0):
     """Generate audio using Kokoro ONNX and save as WAV."""
     import soundfile as sf
+    import numpy as np
 
     kokoro = _get_kokoro()
     samples, sample_rate = kokoro.create(
-        text, voice=voice_id, speed=speed, lang=lang_code
+        text, voice=voice_id, speed=float(speed), lang=lang_code
     )
 
-    wav_path = output_path.replace(".mp3", ".wav") if output_path.endswith(".mp3") else output_path
-    sf.write(wav_path, samples, sample_rate)
-    return wav_path
+    # soundfile needs a path string, not a file object
+    sf.write(str(output_path), np.array(samples), int(sample_rate))
+    return str(output_path)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1156,13 +1157,15 @@ class TTSApp:
 
     def _preview_thread(self, text):
         try:
-            # Kokoro outputs WAV; Edge outputs MP3 — use appropriate suffix
             suffix = ".wav" if self.engine_var.get() == "Kokoro" else ".mp3"
             tmp = tempfile.NamedTemporaryFile(delete=False, suffix=suffix)
             tmp.close()
             self._preview_file = tmp.name
+            # First Kokoro use downloads ~300 MB model — show helpful status
+            if self.engine_var.get() == "Kokoro" and _kokoro_instance is None:
+                self.root.after(0, lambda: self._status(
+                    "Downloading Kokoro model (~300 MB, first use only)...", T["ACCENT"]))
             self._make_audio(text, self._preview_file)
-            # _make_audio may update self._preview_file for Kokoro
             pygame.mixer.music.load(self._preview_file)
             pygame.mixer.music.play()
             self._is_playing = True
@@ -1255,11 +1258,7 @@ class TTSApp:
             voice_label = self.voice_var.get()
             voice_id, lang_code = KOKORO_VOICES[voice_label]
             speed = self.speed_var.get()
-            # Kokoro returns a .wav path (may differ from requested path)
-            actual_path = _kokoro_generate(text, path, voice_id, lang_code, speed)
-            # Update path reference so preview/export uses the right file
-            if actual_path != path:
-                self._preview_file = actual_path
+            _kokoro_generate(text, path, voice_id, lang_code, speed)
             return
 
         # Edge TTS
