@@ -139,6 +139,10 @@ KOKORO_VOICES = {
     "🇬🇧  Lewis (Male · Natural)"     : ("bm_lewis",    "en-gb"),
     "🇬🇧  Daniel (Male · Warm)"       : ("bm_daniel",   "en-gb"),
     "🇬🇧  Fable (Male · Story)"       : ("bm_fable",    "en-gb"),
+    # Spanish (Latin American pronunciation)
+    "🇪🇸  Dora (Female · ES)"         : ("ef_dora",     "es"),
+    "🇪🇸  Alex (Male · ES)"           : ("em_alex",     "es"),
+    "🇪🇸  Santa (Male · ES)"          : ("em_santa",    "es"),
     # Child-like voices
     "🧒  Child · Girl (Sky)"          : ("af_sky",      "en-us"),
     "🧒  Child · Boy (Puck)"          : ("am_puck",     "en-us"),
@@ -1141,11 +1145,15 @@ class TTSApp:
         self.volume_var.set(100.0)
 
     def _sync_preview_text(self, *_):
-        code = VOICES.get(self.voice_var.get(), "en-US")
-        lang = code[:2]
+        if self.engine_var.get() == "Kokoro":
+            voice_label = self.voice_var.get()
+            _, lang_code = KOKORO_VOICES.get(voice_label, ("", "en-us"))
+            lang = lang_code[:2]
+        else:
+            code = VOICES.get(self.voice_var.get(), "en-US")
+            lang = code[:2]
         text = PREVIEW_SENTENCES.get(lang, PREVIEW_SENTENCES["en"])
         self.preview_var.set(text)
-        # Also update the Text widget directly
         try:
             self._preview_entry.delete("1.0", "end")
             self._preview_entry.insert("1.0", text)
