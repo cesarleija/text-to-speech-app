@@ -476,10 +476,10 @@ class ThemeButton(tk.Frame):
 def _log_chrome_error(e):
     """Log chrome setup errors silently — app still works without custom chrome."""
     try:
-        from pathlib import Path
+        from datetime import datetime
         log = Path.home() / "kaori_update.log"
         with open(log, "a", encoding="utf-8") as f:
-            f.write(f"[chrome] {e}\n")
+            f.write(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [chrome] {e}\n")
     except Exception:
         pass
 
@@ -1192,8 +1192,9 @@ class TTSApp:
             suffix = ".wav" if self.engine_var.get() == "Kokoro" else ".mp3"
             tmp = tempfile.NamedTemporaryFile(delete=False, suffix=suffix)
             tmp.close()
-            self._preview_file = tmp.name
-            # First Kokoro use downloads ~300 MB model — show helpful status
+            # Resolve to full long path — Windows may return 8.3 short paths
+            # (e.g. JULIOL~1) for usernames with spaces, which pygame rejects
+            self._preview_file = str(Path(tmp.name).resolve())
             if self.engine_var.get() == "Kokoro" and _kokoro_instance is None:
                 self.root.after(0, lambda: self._status(
                     "Downloading Kokoro model (~300 MB, first use only)...", T["ACCENT"]))
