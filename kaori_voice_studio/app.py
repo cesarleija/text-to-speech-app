@@ -1193,17 +1193,29 @@ class TTSApp:
 
     def _switch_engine(self, engine: str):
         """Switch between Edge TTS and Kokoro engine."""
-        if engine == "Kokoro" and not _kokoro_available():
-            messagebox.showwarning(
-                "Kokoro not installed",
-                "The kokoro-onnx and soundfile packages are required.\n\n"
-                "Install them with:\n"
-                "  pip install kokoro-onnx soundfile\n\n"
-                "Then restart Kaori Voice Studio.\n\n"
-                "The model files (~300 MB) will be downloaded automatically\n"
-                "on first use."
-            )
-            return
+        if engine == "Kokoro":
+            missing = []
+            try:
+                import kokoro_onnx  # noqa: F401
+            except ImportError:
+                missing.append("kokoro-onnx")
+            try:
+                import soundfile  # noqa: F401
+            except ImportError:
+                missing.append("soundfile")
+
+            if missing:
+                messagebox.showwarning(
+                    "Kokoro not installed",
+                    f"The following package(s) are required:\n"
+                    f"  {', '.join(missing)}\n\n"
+                    f"Install with:\n"
+                    f"  pip install {' '.join(missing)}\n\n"
+                    f"Then restart Kaori Voice Studio.\n\n"
+                    f"The model files (~300 MB) will be downloaded\n"
+                    f"automatically on first use."
+                )
+                return
 
         self.engine_var.set(engine)
         for name, btn in self._engine_btns.items():
