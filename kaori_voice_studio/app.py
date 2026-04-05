@@ -290,13 +290,24 @@ def _kokoro_generate_cloned(text, output_path, config, speed=1.0):
 # ── OpenVoice engine ──────────────────────────────────────────────────────────
 
 def _openvoice_available():
-    """Check if OpenVoice and MeloTTS are importable."""
+    """Check if OpenVoice and MeloTTS are importable, auto-patching MeloTTS if needed."""
     try:
         from openvoice.api import ToneColorConverter  # noqa: F401
-        from melo.api import TTS                      # noqa: F401
-        return True
     except ImportError:
         return False
+
+    try:
+        from melo.api import TTS  # noqa: F401
+        return True
+    except (ImportError, Exception):
+        # MeloTTS is installed but broken (likely MeCab/Japanese issue) — try patching
+        try:
+            from kaori_voice_studio.patch_melotts import apply_patches
+            apply_patches(verbose=False)
+            from melo.api import TTS  # noqa: F401
+            return True
+        except Exception:
+            return False
 
 
 _openvoice_converter  = None
@@ -956,6 +967,9 @@ class TTSApp:
             self._pane.sash_place(0, 0, int(total * 0.50))
         else:
             self.root.after(100, self._set_initial_sash)
+
+        # Prompt for DeepSeek API key on first launch if not already set
+        self.root.after(800, self._check_api_key_on_launch)
 
     # ── Cards ─────────────────────────────────────────────────────────────────
 
@@ -1620,6 +1634,21 @@ class TTSApp:
             CONFIG_FILE.write_text(json.dumps(data, indent=2), encoding="utf-8")
         except Exception:
             pass
+
+    def _check_api_key_on_launch(self):
+        """On first launch, if no DeepSeek key is saved, offer to set it now."""
+        if self._load_api_key():
+            return  # Already configured — nothing to do
+        answer = messagebox.askyesno(
+            "DeepSeek API Key",
+            "The ✨ Fix Punctuation feature requires a DeepSeek API key.\n\n"
+            "Would you like to set it up now?\n\n"
+            "(You can also do this later by clicking Fix Punctuation.)",
+            icon="question",
+            parent=self.root,
+        )
+        if answer:
+            self._ask_api_key()
 
     def _ask_api_key(self):
         """Prompt the user to enter their DeepSeek API key."""
