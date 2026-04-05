@@ -135,39 +135,56 @@ def _relaunch():
     and desktop to the new process — the only reliable way to spawn a
     visible GUI window from a pythonw.exe (windowless) parent process.
     """
-    # Always use python.exe (not pythonw.exe) as the target — pythonw.exe
-    # without a proper window station silently swallows the GUI window.
-    # The 'start' command in cmd suppresses the console window for us.
     python = Path(sys.executable)
-    # Resolve to python.exe regardless of whether we were launched via pythonw.exe
+    # Always use python.exe — pythonw.exe without a window station swallows the GUI
     python_exe = python.parent / "python.exe"
     if not python_exe.exists():
         python_exe = python
 
-    module_cmd = f'"{python_exe}" -m kaori_voice_studio.app'
-    _log(f"Relaunching with: cmd /c start {module_cmd}")
+    _log(f"sys.executable: {sys.executable}")
+    _log(f"python_exe resolved: {python_exe}")
 
     try:
         if sys.platform == "win32":
-            # 'start' launches a new process with a fresh window station + desktop
-            # The empty string "" is the window title (required by start syntax)
-            subprocess.Popen(
-                ['cmd', '/c', 'start', '', str(python_exe),
-                 '-m', 'kaori_voice_studio.app'],
-                close_fds=True,
-                creationflags=subprocess.CREATE_NO_WINDOW,
-            )
+            # Try the installed console script first (kaori-voice-studio.exe)
+            scripts_dir = Path(sys.executable).parent / "Scripts"
+            launcher = scripts_dir / "kaori-voice-studio.exe"
+            if not launcher.exists():
+                # User-install path
+                import site
+                try:
+                    user_scripts = Path(site.getusersitepackages()).parent / "Scripts"
+                    launcher = user_scripts / "kaori-voice-studio.exe"
+                except Exception:
+                    launcher = Path("nonexistent")
+
+            if launcher.exists():
+                _log(f"Relaunching via launcher: {launcher}")
+                subprocess.Popen(
+                    ['cmd', '/c', 'start', '', str(launcher)],
+                    close_fds=True,
+                    creationflags=subprocess.CREATE_NO_WINDOW,
+                )
+            else:
+                # Fall back to python -m kaori_voice_studio.app
+                _log(f"Relaunching via: {python_exe} -m kaori_voice_studio.app")
+                subprocess.Popen(
+                    ['cmd', '/c', 'start', '', str(python_exe),
+                     '-m', 'kaori_voice_studio.app'],
+                    close_fds=True,
+                    creationflags=subprocess.CREATE_NO_WINDOW,
+                )
         else:
             subprocess.Popen(
                 [str(python_exe), '-m', 'kaori_voice_studio.app'],
                 close_fds=True,
             )
-        _log("Relaunch spawned via cmd start — exiting current process.")
+        _log("Relaunch spawned — exiting current process.")
     except Exception as e:
         _log(f"Relaunch failed: {e}\n{traceback.format_exc()}")
 
     import time
-    time.sleep(1.0)   # give the new process time to start before we exit
+    time.sleep(1.5)
     sys.exit(0)
 
 # ── Public API ────────────────────────────────────────────────────────────────
