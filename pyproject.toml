@@ -34,6 +34,7 @@ kaori-voice-studio = "kaori_voice_studio.app:main"
 
 [project.scripts]
 kaori-voice-studio-setup = "kaori_voice_studio.create_shortcut:main"
+kaori-melotts-patch = "kaori_voice_studio.patch_melotts:main"
 
 [tool.setuptools.dynamic]
 version = {attr = "kaori_voice_studio.version.__version__"}
